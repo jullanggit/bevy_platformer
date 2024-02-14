@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = { version = "0.12.1" }#, default-features = true, features = ["asset_processor", "bevy_asset", "bevy_audio", "bevy_core_pipeline", "bevy_scene", "bevy_sprite", "bevy_text", "bevy_ui", "bevy_winit", "default_font", "multi-threaded", "png", "serialize", "subpixel_glyph_atlas", "wav", "x11", "wayland", "animation", "bevy_animation", "bevy_render", "bevy_dynamic_plugin"
+bevy = { version = "0.12.1" }# default-features = true, features = ["asset_processor", "bevy_asset", "bevy_audio", "bevy_core_pipeline", "bevy_scene", "bevy_sprite", "bevy_text", "bevy_ui", "bevy_winit", "default_font", "multi-threaded", "png", "serialize", "subpixel_glyph_atlas", "wav", "x11", "wayland", "animation", "bevy_animation", "bevy_render", "bevy_dynamic_plugin"
 # Functionality
 # "dynamic_linking", 
 # "multi-threaded", 
@@ -33,7 +33,7 @@ bevy = { version = "0.12.1" }#, default-features = true, features = ["asset_proc
 # Platform-specific
 # "x11",
 # "wayland",
-] }
+# ] }
 bevy-inspector-egui = "0.22.1"
 image = "0.24.8"
 ahash = "0.8.8"
