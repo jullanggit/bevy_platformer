@@ -1,0 +1,139 @@
+# This is a configuration file for the bacon tool
+#
+# Bacon repository: https://github.com/Canop/bacon
+# Complete help on configuration: https://dystroy.org/bacon/config/
+# You can also check bacon's own bacon.toml file
+#  as an example: https://github.com/Canop/bacon/blob/main/bacon.toml
+
+default_job = "check"
+
+[jobs.check]
+command = ["cargo", "check", "--color", "always"]
+need_stdout = false
+
+[jobs.check-all]
+command = ["cargo", "check", "--all-targets", "--color", "always"]
+need_stdout = false
+
+[jobs.clippy]
+command = [
+    "cargo", "clippy",
+    "--all-targets",
+    "--color", "always",
+    "--",
+    "-W", "clippy::pedantic",
+    "-W", "clippy::nursery",
+    "-W", "clippy::unwrap_used",
+    "-W", "clippy::absurd_extreme_comparisons",
+    "-W", "clippy::almost_complete_range",  
+    "-W", "clippy::almost_swapped",
+    "-W", "clippy::approx_constant",    
+    "-W", "clippy::assign_op_pattern",
+    "-W", "clippy::bool_comparison",
+    "-W", "clippy::bytes_count_to_len",
+    "-W", "clippy::bytes_nth",
+    "-W", "clippy::collapsible_else_if",
+    "-W", "clippy::collapsible_if",
+    "-W", "clippy::collapsible_match",
+    "-W", "clippy::collapsible_str_replace",
+    "-W", "clippy::comparison_chain",
+    "-W", "clippy::comparison_to_empty",
+    "-W", "clippy::double_comparisons",
+    "-W", "clippy::double_neg",
+    "-W", "clippy::double_parens",
+    "-W", "clippy::empty_loop",
+    "-W", "clippy::empty_structs_with_brackets",
+    "-W", "clippy::enum_variant_names",
+    "-W", "clippy::eq_op",
+    "-W", "clippy::erasing_op",
+    "-W", "clippy::excessive_nesting",
+    "-W", "clippy::excessive_precision",
+    "-W", "clippy::explicit_counter_loop",
+    "-W", "clippy::extra_unused_lifetimes",
+    "-W", "clippy::extra_unused_type_parameters",
+    "-W", "clippy::field_reassign_with_default",
+    "-W", "clippy::get_first",
+    "-W", "clippy::get_last_with_len",
+    "-W", "clippy::identity_op",
+    "-W", "clippy::if_same_then_else",
+    "-W", "clippy::implicit_saturating_add",
+    "-W", "clippy::implicit_saturating_sub",
+    "-W", "clippy::impossible_comparisons",
+    "-W", "clippy::inconsistent_digit_grouping",
+    "-W", "clippy::inspect_for_each",
+    "-W", "clippy::inspect_for_each",
+    "-W", "clippy::integer_division",
+    "-W", "clippy::invisible_characters",
+    "-W", "clippy::just_underscores_and_digits",
+    "-W", "clippy::len_zero",
+    "-W", "clippy::let_and_return",
+    "-W", "clippy::let_with_type_underscore",
+    "-W", "clippy::lossy_float_literal",
+    "-W", "clippy::main_recursion",
+    "-W", "clippy::manual_filter",
+    "-W", "clippy::manual_async_fn",
+    "-W", "clippy::manual_bits",
+    "-W", "clippy::manual_filter",
+    "-W", "clippy::manual_filter_map",
+    "-W", "clippy::manual_find_map",
+    "-W", "clippy::manual_find_map",
+    "-W", "clippy::manual_is_finite",
+    "-W", "clippy::manual_is_infinite",
+    "-W", "clippy::manual_map",
+]
+need_stdout = false
+
+# This job lets you run
+# - all tests: bacon test
+# - a specific test: bacon test -- config::test_default_files
+# - the tests of a package: bacon test -- -- -p config
+[jobs.test]
+command = [
+    "cargo", "test", "--color", "always",
+    "--", "--color", "always", # see https://github.com/Canop/bacon/issues/124
+]
+need_stdout = true
+
+[jobs.doc]
+command = ["cargo", "doc", "--color", "always", "--no-deps"]
+need_stdout = false
+
+# If the doc compiles, then it opens in your browser and bacon switches
+# to the previous job
+[jobs.doc-open]
+command = ["cargo", "doc", "--color", "always", "--no-deps", "--open"]
+need_stdout = false
+on_success = "back" # so that we don't open the browser at each change
+
+# You can run your application and have the result displayed in bacon,
+# *if* it makes sense for this crate.
+# Don't forget the `--color always` part or the errors won't be
+# properly parsed.
+# If your program never stops (eg a server), you may set `background`
+# to false to have the cargo run output immediately displayed instead
+# of waiting for program's end.
+[jobs.run]
+command = [
+    "cargo", "run",
+    "--color", "always",
+    # put launch parameters for your program behind a `--` separator
+]
+need_stdout = true
+allow_warnings = true
+background = true
+
+# This parameterized job runs the example of your choice, as soon
+# as the code compiles.
+# Call it as
+#    bacon ex -- my-example
+[jobs.ex]
+command = ["cargo", "run", "--color", "always", "--example"]
+need_stdout = true
+allow_warnings = true
+
+# You may define here keybindings that would be specific to
+# a project, for example a shortcut to launch a specific job.
+# Shortcuts to internal functions (scrolling, toggling, etc.)
+# should go in your personal global prefs.toml file instead.
+[keybindings]
+# alt-m = "job:my-job"
