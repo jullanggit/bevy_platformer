@@ -23,7 +23,7 @@ env:
   # Itch.io configuration
 
   # itchio_target is REQUIRED for publish to itch.io to work.
-  itchio_target: jullang/bevy_platformer
+  itchio_target: jullang/bevy-platformer
   # Example of itchio_target: cart/build-a-better-buddy
   # Check the url of your game page in itch.io
 
