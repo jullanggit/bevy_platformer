@@ -18,12 +18,12 @@ env:
 
   # Valid platforms: "github_releases, itchio, github_pages"
   # - For brevity you can write: "releases, itchio, pages"
-  publish_to: "releases, pages"
+  publish_to: "releases, pages, itchio"
 
   # Itch.io configuration
 
   # itchio_target is REQUIRED for publish to itch.io to work.
-  # itchio_target: #<user>/<your-game>
+  itchio_target: jullang/bevy-platformer
   # Example of itchio_target: cart/build-a-better-buddy
   # Check the url of your game page in itch.io
 
