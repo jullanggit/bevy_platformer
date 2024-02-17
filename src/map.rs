@@ -1,5 +1,7 @@
-use crate::asset_loader::Sprites;
-use crate::physics::{Position, AABB};
+use crate::{
+    asset_loader::{load_assets, Sprites},
+    physics::{Position, AABB},
+};
 use bevy::prelude::*;
 use image::io::Reader as ImageReader;
 use image::GenericImageView;
@@ -7,7 +9,7 @@ use image::GenericImageView;
 pub struct MapPlugin;
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_map);
+        app.add_systems(Startup, setup_map.after(load_assets));
     }
 }
 

@@ -15,7 +15,7 @@ impl Plugin for AssetLoaderPlugin {
     }
 }
 
-fn load_assets(
+pub fn load_assets(
     asset_server: Res<AssetServer>,
     mut texture_atlases: ResMut<Assets<TextureAtlas>>,
     mut sprites: ResMut<Sprites>,

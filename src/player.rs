@@ -1,3 +1,4 @@
+use crate::asset_loader::load_assets;
 use crate::map::TILE_SIZE;
 use crate::physics::{
     Gravity, MovingObjectState, MovingSpriteBundle, Velocity, AABB, GRAVITY_CONSTANT,
@@ -14,7 +15,7 @@ impl Plugin for Playerplugin {
     fn build(&self, app: &mut App) {
         app.register_type::<PlayerState>()
             .register_type::<Jump>()
-            .add_systems(Startup, spawn_player)
+            .add_systems(Startup, spawn_player.after(load_assets))
             .add_systems(Update, (movement_controls));
     }
 }
