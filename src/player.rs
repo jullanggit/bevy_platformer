@@ -3,6 +3,7 @@ use crate::map::TILE_SIZE;
 use crate::physics::{
     Gravity, MovingObjectState, MovingSpriteBundle, Velocity, AABB, GRAVITY_CONSTANT,
 };
+use bevy::input::keyboard::KeyboardInput;
 use bevy::prelude::*;
 
 const PLAYER_SPEED: f32 = 200.0;
@@ -78,7 +79,7 @@ fn movement_controls(
         ),
         With<Player>,
     >,
-    keyboard_input: Res<Input<KeyCode>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
 ) {
     let (mut velocity, mut player_state, mut moving_object_state, mut sprite) = query.single_mut();
 
@@ -96,7 +97,7 @@ fn movement_controls(
             );
 
             // if jump key is pressed
-            if keyboard_input.pressed(KeyCode::S) {
+            if keyboard_input.pressed(KeyCode::KeyS) {
                 initiate_jump(&mut player_state);
             }
         }
@@ -125,7 +126,7 @@ fn movement_controls(
                 false,
             );
 
-            if keyboard_input.pressed(KeyCode::S) {
+            if keyboard_input.pressed(KeyCode::KeyS) {
                 load_jump(&mut player_state);
             } else {
                 execute_jump(&mut moving_object_state, &mut player_state, &mut velocity);
@@ -178,7 +179,7 @@ fn execute_jump(
 
 fn move_horizontal(
     maneuverability: f32,
-    keyboard_input: &Res<Input<KeyCode>>,
+    keyboard_input: &Res<ButtonInput<KeyCode>>,
     player_state: &mut PlayerState,
     sprite: &mut Sprite,
     velocity: &mut Velocity,
@@ -186,14 +187,14 @@ fn move_horizontal(
     change_state: bool,
 ) {
     // set state to standing if both or neither of the keys are pressed
-    if keyboard_input.pressed(KeyCode::D) == keyboard_input.pressed(KeyCode::A) {
+    if keyboard_input.pressed(KeyCode::KeyD) == keyboard_input.pressed(KeyCode::KeyA) {
         if change_state {
             *player_state = PlayerState::Standing;
         }
         velocity.value.x = 0.0;
     }
     // left
-    else if keyboard_input.pressed(KeyCode::A) {
+    else if keyboard_input.pressed(KeyCode::KeyA) {
         if change_state {
             *player_state = PlayerState::Walking;
         }
@@ -204,7 +205,7 @@ fn move_horizontal(
             sprite.flip_x = true;
         }
         // right
-    } else if keyboard_input.pressed(KeyCode::D) {
+    } else if keyboard_input.pressed(KeyCode::KeyD) {
         if change_state {
             *player_state = PlayerState::Walking;
         }

@@ -1,27 +1,31 @@
+use std::{default, thread::sleep, time::Duration};
+
 use crate::{
-    asset_loader::{load_assets, Sprites},
+    asset_loader::{load_assets, Sprites, SpritesLoadingStates},
     physics::{Position, AABB},
 };
-use bevy::prelude::*;
+use bevy::{prelude::*, utils::dbg};
 use image::io::Reader as ImageReader;
 use image::GenericImageView;
 
 pub struct MapPlugin;
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_map.after(load_assets));
+        app.init_resource::<TileMap>()
+            .add_systems(OnEnter(SpritesLoadingStates::Finished), setup_map);
     }
 }
 
 pub const TILE_SIZE: f32 = 64.0;
 
-#[derive(PartialEq, Debug, Clone, Copy)]
+#[derive(PartialEq, Debug, Clone, Copy, Default)]
 pub enum TileType {
+    #[default]
     Empty,
     Block,
 }
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct TileMap {
     tile_map: Box<[TileType]>,
     width: usize,
@@ -175,29 +179,49 @@ pub fn collides_with_right_wall(aabb: &AABB, position: Position, map: &TileMap) 
     None
 }
 
-fn setup_map(mut commands: Commands, texture_atlas_handle: Res<Sprites>) {
-    // load image
-    let img = ImageReader::open("assets/map1.png")
-        .unwrap()
-        .decode()
-        .unwrap();
+pub fn setup_map(mut commands: Commands, sprites: Res<Sprites>, images: Res<Assets<Image>>) {
+    // // load image
+    // let img = ImageReader::open("assets/map1.png")
+    //     .unwrap()
+    //     .decode()
+    //     .unwrap();
+    //
+    // // create empty tileMap
+    // let dimensions = img.dimensions();
+    // let mut tile_map = TileMap::new(dimensions.0 as usize, dimensions.1 as usize);
+    //
+    // // populate tilemap
+    // for (x, y, pixel) in img.pixels() {
+    //     let rgba = pixel.0;
+    //
+    //     match rgba {
+    //         [255, 255, 255, 255] => {
+    //             // index should be valid, as width and height are constructed from the same
+    //             // dimensions
+    //             let tile = tile_map.get_mut_tile((x as usize, y as usize)).unwrap();
+    //             *tile = TileType::Block;
+    //         }
+    //         _ => {}
+    //     }
+    // }
+    let level1_image = images.get(&sprites.level1).unwrap();
+    let size = level1_image.size();
+    // panics if size doesnt fit in usize
+    let mut tile_map = TileMap::new(size.y.try_into().unwrap(), size.x.try_into().unwrap());
 
-    // create empty tileMap
-    let dimensions = img.dimensions();
-    let mut tile_map = TileMap::new(dimensions.0 as usize, dimensions.1 as usize);
-
-    // populate tilemap
-    for (x, y, pixel) in img.pixels() {
-        let rgba = pixel.0;
-
-        match rgba {
-            [255, 255, 255, 255] => {
-                // index should be valid, as width and height are constructed from the same
-                // dimensions
-                let tile = tile_map.get_mut_tile((x as usize, y as usize)).unwrap();
-                *tile = TileType::Block;
+    for y in 0..size.x {
+        for x in 0..size.y {
+            let pixel_index = (y * level1_image.size().y + x) as usize * 4; // Assuming 4 bytes per pixel (RGBA)
+            let rgba = &level1_image.data[pixel_index..pixel_index + 4];
+            match rgba {
+                [255, 255, 255, 255] => {
+                    // index should be valid, as width and height are constructed from the same
+                    // dimensions
+                    let tile = tile_map.get_mut_tile((x as usize, y as usize)).unwrap();
+                    *tile = TileType::Block;
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
 
@@ -215,9 +239,12 @@ fn setup_map(mut commands: Commands, texture_atlas_handle: Res<Sprites>) {
                 commands.spawn((
                     Name::new("Block"),
                     SpriteSheetBundle {
-                        texture_atlas: texture_atlas_handle.map_atlas.clone(),
-                        sprite: TextureAtlasSprite {
+                        atlas: TextureAtlas {
+                            layout: sprites.map_layout.clone(),
                             index: 0,
+                        },
+                        texture: sprites.map_texture.clone(),
+                        sprite: Sprite {
                             custom_size: Some(Vec2::new(TILE_SIZE, TILE_SIZE)),
                             ..default()
                         },
