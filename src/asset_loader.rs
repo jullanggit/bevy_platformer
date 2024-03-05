@@ -3,18 +3,10 @@ use bevy_asset_loader::prelude::*;
 
 #[derive(Resource, Debug, Default, AssetCollection)]
 pub struct Sprites {
-    #[asset(texture_atlas_layout(
-        tile_size_x = 8.,
-        tile_size_y = 8.,
-        columns = 8,
-        rows = 12,
-        padding_x = 0.,
-        padding_y = 0.,
-        offset_x = 0.,
-        offset_y = 0.
-    ))]
+    #[asset(texture_atlas_layout(tile_size_x = 8., tile_size_y = 8., columns = 8, rows = 12))]
     pub map_layout: Handle<TextureAtlasLayout>,
     #[asset(path = "cavesofgallet_tiles.png")]
+    #[asset(image(sampler = nearest))]
     pub map_texture: Handle<Image>,
     #[asset(path = "map1.png")]
     pub level1: Handle<Image>,

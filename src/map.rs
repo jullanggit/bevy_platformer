@@ -5,8 +5,6 @@ use crate::{
     physics::{Position, AABB},
 };
 use bevy::{prelude::*, utils::dbg};
-use image::io::Reader as ImageReader;
-use image::GenericImageView;
 
 pub struct MapPlugin;
 impl Plugin for MapPlugin {
