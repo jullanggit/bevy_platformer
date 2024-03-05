@@ -1,10 +1,8 @@
-use std::{default, thread::sleep, time::Duration};
-
 use crate::{
-    asset_loader::{load_assets, Sprites, SpritesLoadingStates},
+    asset_loader::{Sprites, SpritesLoadingStates},
     physics::{Position, AABB},
 };
-use bevy::{prelude::*, utils::dbg};
+use bevy::prelude::*;
 
 pub struct MapPlugin;
 impl Plugin for MapPlugin {

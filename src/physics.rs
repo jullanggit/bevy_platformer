@@ -1,8 +1,7 @@
 use bevy::prelude::*;
 
 use crate::map::{
-    collides_with_ceiling, collides_with_left_wall, collides_with_right_wall, has_ground,
-    setup_map, TileMap,
+    collides_with_ceiling, collides_with_left_wall, collides_with_right_wall, has_ground, TileMap,
 };
 
 pub struct PhysicsPlugin;

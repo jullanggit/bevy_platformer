@@ -3,8 +3,8 @@ use crate::map::TILE_SIZE;
 use crate::physics::{
     Gravity, MovingObjectState, MovingSpriteBundle, Velocity, AABB, GRAVITY_CONSTANT,
 };
-use bevy::input::keyboard::KeyboardInput;
 use bevy::prelude::*;
+use bevy::utils::dbg;
 
 const PLAYER_SPEED: f32 = 200.0;
 pub const PLAYER_JUMP_FORCE: f32 = 40.0;
@@ -49,6 +49,24 @@ impl Jump {
     }
 }
 
+#[derive(Component, Debug, Default, Reflect)]
+#[reflect(Component)]
+pub struct Stretching {
+    stretch_speed: f32,
+    max_volume: f32,
+    min_volume: f32,
+}
+
+impl Stretching {
+    pub fn new(stretch_speed: f32, max_volume: f32, min_volume: f32) -> Self {
+        Self {
+            stretch_speed,
+            max_volume,
+            min_volume,
+        }
+    }
+}
+
 // Systems -- Startup
 fn spawn_player(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((
@@ -65,6 +83,7 @@ fn spawn_player(mut commands: Commands, asset_server: Res<AssetServer>) {
             ..default()
         },
         PlayerState::Standing,
+        Stretching::new(10.0, 5000.0, 3000.0),
     ));
 }
 
@@ -76,12 +95,16 @@ fn movement_controls(
             &mut PlayerState,
             &mut MovingObjectState,
             &mut Sprite,
+            &mut AABB,
+            &Stretching,
         ),
         With<Player>,
     >,
     keyboard_input: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
 ) {
-    let (mut velocity, mut player_state, mut moving_object_state, mut sprite) = query.single_mut();
+    let (mut velocity, mut player_state, mut moving_object_state, mut sprite, mut aabb, stretching) =
+        query.single_mut();
 
     match player_state.as_mut() {
         PlayerState::Standing | PlayerState::Walking => {
@@ -141,6 +164,42 @@ fn movement_controls(
             *moving_object_state,
             true,
         ),
+    }
+
+    // Changing hitbox
+    // horizontal
+    if keyboard_input.pressed(KeyCode::ArrowLeft) || keyboard_input.pressed(KeyCode::ArrowRight) {
+        match keyboard_input.pressed(KeyCode::ShiftLeft)
+            || keyboard_input.pressed(KeyCode::ShiftRight)
+        {
+            false => {
+                if (aabb.halfsize.x * 2.0) * (aabb.halfsize.y * 2.0) < stretching.max_volume {
+                    aabb.halfsize.x += stretching.stretch_speed * time.delta_seconds()
+                }
+            }
+            true => {
+                if (aabb.halfsize.x * 2.0) * (aabb.halfsize.y * 2.0) > stretching.min_volume {
+                    aabb.halfsize.x -= stretching.stretch_speed * time.delta_seconds()
+                }
+            }
+        }
+    // vertical
+    } else if keyboard_input.pressed(KeyCode::ArrowUp) || keyboard_input.pressed(KeyCode::ArrowDown)
+    {
+        match keyboard_input.pressed(KeyCode::ShiftLeft)
+            || keyboard_input.pressed(KeyCode::ShiftRight)
+        {
+            false => {
+                if (aabb.halfsize.x * 2.0) * (aabb.halfsize.y * 2.0) < stretching.max_volume {
+                    aabb.halfsize.y += stretching.stretch_speed * time.delta_seconds()
+                }
+            }
+            true => {
+                if (aabb.halfsize.x * 2.0) * (aabb.halfsize.y * 2.0) > stretching.min_volume {
+                    aabb.halfsize.y -= stretching.stretch_speed * time.delta_seconds()
+                }
+            }
+        }
     }
 }
 
