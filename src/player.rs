@@ -16,6 +16,7 @@ impl Plugin for Playerplugin {
     fn build(&self, app: &mut App) {
         app.register_type::<PlayerState>()
             .register_type::<Jump>()
+            .register_type::<Stretching>()
             .add_systems(Startup, spawn_player.after(load_assets))
             .add_systems(Update, (movement_controls));
     }
@@ -53,16 +54,16 @@ impl Jump {
 #[reflect(Component)]
 pub struct Stretching {
     stretch_speed: f32,
-    max_volume: f32,
-    min_volume: f32,
+    volume: f32,
+    min_stretch: f32,
 }
 
 impl Stretching {
-    pub fn new(stretch_speed: f32, max_volume: f32, min_volume: f32) -> Self {
+    pub fn new(stretch_speed: f32, volume: f32, min_stretch: f32) -> Self {
         Self {
             stretch_speed,
-            max_volume,
-            min_volume,
+            volume,
+            min_stretch,
         }
     }
 }
@@ -74,16 +75,24 @@ fn spawn_player(mut commands: Commands, asset_server: Res<AssetServer>) {
         Name::new("Player"),
         MovingSpriteBundle {
             sprite_bundle: SpriteBundle {
-                texture: asset_server.load("hkSprite.png"),
-                sprite: Sprite::default(),
+                texture: asset_server.load("player.png"),
+                sprite: Sprite {
+                    custom_size: Some(Vec2::new(TILE_SIZE, TILE_SIZE)),
+                    ..default()
+                },
                 ..default()
             },
             gravity: Gravity::new(GRAVITY_CONSTANT),
             aabb: AABB::new(Vec2::new(TILE_SIZE / 2.0, TILE_SIZE / 2.0)),
             ..default()
         },
+        ImageScaleMode::Sliced(TextureSlicer {
+            border: BorderRect::square(10.0),
+            max_corner_scale: 1.0,
+            ..default()
+        }),
         PlayerState::Standing,
-        Stretching::new(10.0, 5000.0, 3000.0),
+        Stretching::new(100.0, (TILE_SIZE / 2.0) * (TILE_SIZE / 2.0), 10.0),
     ));
 }
 
@@ -168,39 +177,30 @@ fn movement_controls(
 
     // Changing hitbox
     // horizontal
-    if keyboard_input.pressed(KeyCode::ArrowLeft) || keyboard_input.pressed(KeyCode::ArrowRight) {
-        match keyboard_input.pressed(KeyCode::ShiftLeft)
-            || keyboard_input.pressed(KeyCode::ShiftRight)
-        {
-            false => {
-                if (aabb.halfsize.x * 2.0) * (aabb.halfsize.y * 2.0) < stretching.max_volume {
-                    aabb.halfsize.x += stretching.stretch_speed * time.delta_seconds()
-                }
+    if keyboard_input.pressed(KeyCode::KeyJ) {
+        // prevent the player from getting to thin
+        if aabb.halfsize.y > stretching.min_stretch {
+            if !(moving_object_state.pushes_left_wall && moving_object_state.pushes_right_wall) {
+                aabb.halfsize.x += stretching.stretch_speed * time.delta_seconds();
+                aabb.halfsize.y = (stretching.volume / aabb.halfsize.x * 2.0) / 2.0;
             }
-            true => {
-                if (aabb.halfsize.x * 2.0) * (aabb.halfsize.y * 2.0) > stretching.min_volume {
-                    aabb.halfsize.x -= stretching.stretch_speed * time.delta_seconds()
-                }
-            }
+        } else {
+            aabb.halfsize.y = stretching.min_stretch;
         }
-    // vertical
-    } else if keyboard_input.pressed(KeyCode::ArrowUp) || keyboard_input.pressed(KeyCode::ArrowDown)
-    {
-        match keyboard_input.pressed(KeyCode::ShiftLeft)
-            || keyboard_input.pressed(KeyCode::ShiftRight)
-        {
-            false => {
-                if (aabb.halfsize.x * 2.0) * (aabb.halfsize.y * 2.0) < stretching.max_volume {
-                    aabb.halfsize.y += stretching.stretch_speed * time.delta_seconds()
-                }
+        // vertical
+    };
+    if keyboard_input.pressed(KeyCode::KeyK) {
+        // prevent the player from getting to thin
+        if aabb.halfsize.x > stretching.min_stretch {
+            if !(moving_object_state.on_ground && moving_object_state.at_ceiling) {
+                aabb.halfsize.y += stretching.stretch_speed * time.delta_seconds();
+                aabb.halfsize.x = (stretching.volume / aabb.halfsize.y * 2.0) / 2.0;
             }
-            true => {
-                if (aabb.halfsize.x * 2.0) * (aabb.halfsize.y * 2.0) > stretching.min_volume {
-                    aabb.halfsize.y -= stretching.stretch_speed * time.delta_seconds()
-                }
-            }
+        } else {
+            aabb.halfsize.x = stretching.min_stretch;
         }
-    }
+    };
+    sprite.custom_size = Some(aabb.halfsize * 2.0);
 }
 
 fn initiate_jump(player_state: &mut PlayerState) {
