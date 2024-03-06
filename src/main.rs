@@ -3,7 +3,7 @@
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 
 use asset_loader::AssetLoaderPlugin;
-use bevy::prelude::*;
+use bevy::{asset::AssetMetaCheck, prelude::*};
 use camera::CameraPlugin;
 use map::MapPlugin;
 use physics::PhysicsPlugin;
@@ -17,6 +17,8 @@ mod player;
 
 fn main() {
     let mut app = App::new();
+    // disable checking for .meta files
+    app.insert_resource(AssetMetaCheck::Never);
     // built-in plugins
     app.add_plugins(
         DefaultPlugins, //.set(WindowPlugin {
