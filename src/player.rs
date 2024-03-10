@@ -1,10 +1,7 @@
 use crate::asset_loader::load_assets;
 use crate::map::TILE_SIZE;
-use crate::physics::{
-    Gravity, MovingObjectState, MovingSpriteBundle, Velocity, AABB, GRAVITY_CONSTANT,
-};
+use crate::physics::{Gravity, MovingObject, MovingSpriteBundle, AABB, GRAVITY_CONSTANT};
 use bevy::prelude::*;
-use bevy::utils::dbg;
 
 const PLAYER_SPEED: f32 = 200.0;
 pub const PLAYER_JUMP_FORCE: f32 = 40.0;
@@ -18,7 +15,7 @@ impl Plugin for Playerplugin {
             .register_type::<Jump>()
             .register_type::<Stretching>()
             .add_systems(Startup, spawn_player.after(load_assets))
-            .add_systems(Update, (movement_controls));
+            .add_systems(Update, movement_controls);
     }
 }
 
@@ -56,14 +53,21 @@ pub struct Stretching {
     stretch_speed: f32,
     volume: f32,
     min_stretch: f32,
+    pub currently_stretching: bool,
 }
 
 impl Stretching {
-    pub fn new(stretch_speed: f32, volume: f32, min_stretch: f32) -> Self {
+    pub const fn new(
+        stretch_speed: f32,
+        volume: f32,
+        min_stretch: f32,
+        currently_stretching: bool,
+    ) -> Self {
         Self {
             stretch_speed,
             volume,
             min_stretch,
+            currently_stretching,
         }
     }
 }
@@ -84,6 +88,10 @@ fn spawn_player(mut commands: Commands, asset_server: Res<AssetServer>) {
             },
             gravity: Gravity::new(GRAVITY_CONSTANT),
             aabb: AABB::new(Vec2::new(TILE_SIZE / 2.0, TILE_SIZE / 2.0)),
+            moving_object: MovingObject {
+                mass: 1.0,
+                ..default()
+            },
             ..default()
         },
         ImageScaleMode::Sliced(TextureSlicer {
@@ -92,7 +100,7 @@ fn spawn_player(mut commands: Commands, asset_server: Res<AssetServer>) {
             ..default()
         }),
         PlayerState::Standing,
-        Stretching::new(100.0, (TILE_SIZE / 2.0) * (TILE_SIZE / 2.0), 10.0),
+        Stretching::new(100.0, (TILE_SIZE / 2.0) * (TILE_SIZE / 2.0), 10.0, false),
     ));
 }
 
@@ -100,19 +108,18 @@ fn spawn_player(mut commands: Commands, asset_server: Res<AssetServer>) {
 fn movement_controls(
     mut query: Query<
         (
-            &mut Velocity,
+            &mut MovingObject,
             &mut PlayerState,
-            &mut MovingObjectState,
             &mut Sprite,
             &mut AABB,
-            &Stretching,
+            &mut Stretching,
         ),
         With<Player>,
     >,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
 ) {
-    let (mut velocity, mut player_state, mut moving_object_state, mut sprite, mut aabb, stretching) =
+    let (mut moving_object, mut player_state, mut sprite, mut aabb, mut stretching) =
         query.single_mut();
 
     match player_state.as_mut() {
@@ -123,8 +130,7 @@ fn movement_controls(
                 &keyboard_input,
                 &mut player_state,
                 &mut sprite,
-                &mut velocity,
-                *moving_object_state,
+                &mut moving_object,
                 true,
             );
 
@@ -153,15 +159,14 @@ fn movement_controls(
                 &keyboard_input,
                 &mut player_state,
                 &mut sprite,
-                &mut velocity,
-                *moving_object_state,
+                &mut moving_object,
                 false,
             );
 
             if keyboard_input.pressed(KeyCode::KeyS) {
                 load_jump(&mut player_state);
             } else {
-                execute_jump(&mut moving_object_state, &mut player_state, &mut velocity);
+                execute_jump(&mut moving_object, &mut player_state);
             }
         }
         PlayerState::Jumping => move_horizontal(
@@ -169,8 +174,7 @@ fn movement_controls(
             &keyboard_input,
             &mut player_state,
             &mut sprite,
-            &mut velocity,
-            *moving_object_state,
+            &mut moving_object,
             true,
         ),
     }
@@ -180,26 +184,31 @@ fn movement_controls(
     if keyboard_input.pressed(KeyCode::KeyJ) {
         // prevent the player from getting to thin
         if aabb.halfsize.y > stretching.min_stretch {
-            if !(moving_object_state.pushes_left_wall && moving_object_state.pushes_right_wall) {
+            if !(moving_object.state.left && moving_object.state.right) {
                 aabb.halfsize.x += stretching.stretch_speed * time.delta_seconds();
                 aabb.halfsize.y = (stretching.volume / aabb.halfsize.x * 2.0) / 2.0;
+
+                stretching.currently_stretching = true;
             }
         } else {
             aabb.halfsize.y = stretching.min_stretch;
         }
         // vertical
-    };
-    if keyboard_input.pressed(KeyCode::KeyK) {
+    } else if keyboard_input.pressed(KeyCode::KeyK) {
         // prevent the player from getting to thin
         if aabb.halfsize.x > stretching.min_stretch {
-            if !(moving_object_state.on_ground && moving_object_state.at_ceiling) {
+            if !(moving_object.state.ground && moving_object.state.ceiling) {
                 aabb.halfsize.y += stretching.stretch_speed * time.delta_seconds();
                 aabb.halfsize.x = (stretching.volume / aabb.halfsize.y * 2.0) / 2.0;
+
+                stretching.currently_stretching = true;
             }
         } else {
             aabb.halfsize.x = stretching.min_stretch;
         }
-    };
+    } else {
+        stretching.currently_stretching = false;
+    }
     sprite.custom_size = Some(aabb.halfsize * 2.0);
 }
 
@@ -222,18 +231,14 @@ fn load_jump(player_state: &mut PlayerState) {
     }
 }
 
-fn execute_jump(
-    moving_object_state: &mut MovingObjectState,
-    player_state: &mut PlayerState,
-    velocity: &mut Velocity,
-) {
+fn execute_jump(moving_object: &mut MovingObject, player_state: &mut PlayerState) {
     if let PlayerState::LoadingJump(jump) = player_state {
         if let Some(load_time) = jump.jump_state {
-            velocity.value.y = PLAYER_JUMP_FORCE * load_time as f32;
+            moving_object.velocity.value.y = PLAYER_JUMP_FORCE * load_time as f32;
         }
     }
     *player_state = PlayerState::Jumping;
-    moving_object_state.on_ground = false;
+    moving_object.state.ground = false;
 }
 
 fn move_horizontal(
@@ -241,8 +246,7 @@ fn move_horizontal(
     keyboard_input: &Res<ButtonInput<KeyCode>>,
     player_state: &mut PlayerState,
     sprite: &mut Sprite,
-    velocity: &mut Velocity,
-    moving_object_state: MovingObjectState,
+    moving_object: &mut MovingObject,
     change_state: bool,
 ) {
     // set state to standing if both or neither of the keys are pressed
@@ -250,17 +254,17 @@ fn move_horizontal(
         if change_state {
             *player_state = PlayerState::Standing;
         }
-        velocity.value.x = 0.0;
+        moving_object.velocity.value.x = 0.0;
     }
     // left
     else if keyboard_input.pressed(KeyCode::KeyA) {
         if change_state {
             *player_state = PlayerState::Walking;
         }
-        if moving_object_state.pushes_left_wall {
-            velocity.value.x = 0.0;
+        if moving_object.state.left {
+            moving_object.velocity.value.x = 0.0;
         } else {
-            velocity.value.x = -PLAYER_SPEED * maneuverability;
+            moving_object.velocity.value.x = -PLAYER_SPEED * maneuverability;
             sprite.flip_x = true;
         }
         // right
@@ -268,16 +272,16 @@ fn move_horizontal(
         if change_state {
             *player_state = PlayerState::Walking;
         }
-        if moving_object_state.pushes_right_wall {
-            velocity.value.x = 0.0;
+        if moving_object.state.right {
+            moving_object.velocity.value.x = 0.0;
         } else {
-            velocity.value.x = PLAYER_SPEED * maneuverability;
+            moving_object.velocity.value.x = PLAYER_SPEED * maneuverability;
             sprite.flip_x = false;
         }
     }
 
     // check if grounded
-    if !moving_object_state.on_ground && change_state {
+    if !moving_object.state.ground && change_state {
         *player_state = PlayerState::Jumping;
     }
 }

@@ -1,9 +1,5 @@
 use bevy::prelude::*;
 
-use crate::map::{
-    collides_with_ceiling, collides_with_left_wall, collides_with_right_wall, has_ground, TileMap,
-};
-
 pub struct PhysicsPlugin;
 impl Plugin for PhysicsPlugin {
     fn build(&self, app: &mut App) {
@@ -13,7 +9,10 @@ impl Plugin for PhysicsPlugin {
             .register_type::<Gravity>()
             .register_type::<MovingObjectState>()
             .register_type::<MovingObject>()
-            .add_systems(Update, (update_physics, apply_gravity, correct_collisions));
+            .add_systems(
+                Update,
+                (update_physics, apply_gravity, collisions, stop_movement),
+            );
     }
 }
 
@@ -30,7 +29,7 @@ impl Velocity {
     }
 }
 
-#[derive(Component, Clone, Copy, Default, Reflect)]
+#[derive(Component, Clone, Copy, Default, Reflect, Debug)]
 #[reflect(Component)]
 pub struct Position {
     pub value: Vec2,
@@ -41,7 +40,7 @@ impl Position {
     }
 }
 
-#[derive(Component, Default, Reflect)]
+#[derive(Component, Default, Reflect, Debug)]
 #[reflect(Component)]
 pub struct AABB {
     pub halfsize: Vec2,
@@ -66,33 +65,32 @@ impl Gravity {
 #[derive(Component, Clone, Copy, Default, Reflect)]
 #[reflect(Component)]
 pub struct MovingObjectState {
-    pub pushes_right_wall: bool,
-
-    pub pushes_left_wall: bool,
-
-    pub on_ground: bool,
-
-    pub at_ceiling: bool,
+    pub right: bool,
+    pub left: bool,
+    pub ground: bool,
+    pub ceiling: bool,
 }
 
 #[derive(Component, Clone, Copy, Default, Reflect)]
 #[reflect(Component)]
 pub struct MovingObject {
+    // timeless
+    pub mass: f32,
+
+    // current
+    pub position: Position,
+    pub velocity: Velocity,
+    pub state: MovingObjectState,
+
+    // old
     pub old_position: Position,
-
     pub old_velocity: Velocity,
-
     pub old_state: MovingObjectState,
-
-    pub aabb_offset: Vec2,
 }
 
 #[derive(Bundle, Default)]
 pub struct MovingObjectBundle {
     transform: Transform,
-    position: Position,
-    velocity: Velocity,
-    state: MovingObjectState,
     aabb: AABB,
     moving_object: MovingObject,
     gravity: Gravity,
@@ -100,9 +98,6 @@ pub struct MovingObjectBundle {
 
 #[derive(Bundle, Default)]
 pub struct MovingSpriteBundle {
-    pub position: Position,
-    pub velocity: Velocity,
-    pub state: MovingObjectState,
     pub aabb: AABB,
     pub moving_object: MovingObject,
     pub sprite_bundle: SpriteBundle,
@@ -111,116 +106,140 @@ pub struct MovingSpriteBundle {
 
 #[derive(Bundle, Default)]
 pub struct MovingSpriteSheetBundle {
-    pub position: Position,
-    pub velocity: Velocity,
-    pub state: MovingObjectState,
     pub aabb: AABB,
     pub moving_object: MovingObject,
     pub spritesheet_bundle: SpriteSheetBundle,
     pub gravity: Gravity,
 }
 
-fn update_physics(
-    mut query: Query<(
-        &mut MovingObject,
-        &mut Transform,
-        &Velocity,
-        &MovingObjectState,
-        &mut Position,
-    )>,
-    time: Res<Time>,
-) {
-    for (mut moving_object, mut transform, velocity, moving_object_state, mut position) in
-        &mut query
+fn update_physics(mut query: Query<(&mut MovingObject, &mut Transform)>, time: Res<Time>) {
+    for (mut moving_object, mut transform) in &mut query {
+        moving_object.old_position = moving_object.position;
+        moving_object.old_velocity = moving_object.velocity;
+        moving_object.old_state = moving_object.state;
+
+        let velocity_value = moving_object.velocity.value;
+        moving_object.position.value += velocity_value * time.delta_seconds();
+
+        transform.translation.x = moving_object.position.value.x;
+        transform.translation.y = moving_object.position.value.y;
+    }
+}
+
+fn stop_movement(mut query: Query<&mut MovingObject>) {
+    for mut moving_object in &mut query {
+        if (moving_object.state.ceiling || moving_object.state.ground)
+            && (!moving_object.old_state.ceiling || !moving_object.old_state.ground)
+        {
+            moving_object.velocity.value.y = 0.0;
+        }
+        if (moving_object.state.left || moving_object.state.right)
+            && (!moving_object.old_state.left || !moving_object.old_state.right)
+        {
+            moving_object.velocity.value.x = 0.0;
+        }
+    }
+}
+
+fn collisions(mut query: Query<(&AABB, &mut MovingObject)>) {
+    // generate over all combinations of 2
+    let mut combinations = query.iter_combinations_mut::<2>();
+
+    // iterate over combinations
+    while let Some([(a_aabb, mut a_moving_object), (b_aabb, mut b_moving_object)]) =
+        combinations.fetch_next()
     {
-        moving_object.old_position = *position;
-        moving_object.old_velocity = *velocity;
-        moving_object.old_state = *moving_object_state;
+        // if both objects have a mass of 0 (are stationary), continue to next iteration
+        if a_moving_object.mass == 0.0 && b_moving_object.mass == 0.0 {
+            continue;
+        }
 
-        position.value += velocity.value * time.delta_seconds();
+        let a_pos = a_moving_object.position;
+        let b_pos = b_moving_object.position;
 
-        transform.translation.x = position.value.x;
-        transform.translation.y = position.value.y;
+        // if there is a collision
+        if let Some(penetration_depth) = penetration_depth(a_aabb, a_pos, b_aabb, b_pos) {
+            let total_mass = a_moving_object.mass + b_moving_object.mass;
+            let a_ratio = a_moving_object.mass / total_mass;
+            let b_ratio = b_moving_object.mass / total_mass;
+
+            // determine which axis to adjust
+            if penetration_depth.x.abs() < penetration_depth.y.abs() {
+                // adjusting position
+                a_moving_object.position.value.x += (penetration_depth.x * a_ratio);
+                b_moving_object.position.value.x += (penetration_depth.x * b_ratio);
+
+                // setting horizontal states
+                if penetration_depth.x > 0.0 {
+                    a_moving_object.state.right = true;
+                    b_moving_object.state.left = true;
+                } else {
+                    a_moving_object.state.left = true;
+                    b_moving_object.state.right = true;
+                }
+            } else {
+                // adjusting position
+                a_moving_object.position.value.y += (penetration_depth.y * a_ratio);
+                b_moving_object.position.value.y += (penetration_depth.y * b_ratio);
+
+                if penetration_depth.y > 0.0 {
+                    a_moving_object.state.ceiling = true;
+                    b_moving_object.state.ground = true;
+                } else {
+                    a_moving_object.state.ground = true;
+                    b_moving_object.state.ceiling = true;
+                }
+            }
+        } else {
+            // if there is no collision, set all fields to false
+            a_moving_object.state.left = false;
+            a_moving_object.state.right = false;
+            a_moving_object.state.ceiling = false;
+            a_moving_object.state.ground = false;
+
+            b_moving_object.state.left = false;
+            b_moving_object.state.right = false;
+            b_moving_object.state.ceiling = false;
+            b_moving_object.state.ground = false;
+        }
     }
 }
-
-fn correct_collisions(
-    mut query: Query<(
-        &mut Velocity,
-        &AABB,
-        &mut Position,
-        &MovingObject,
-        &mut MovingObjectState,
-    )>,
-    map: Res<TileMap>,
-) {
-    for (mut velocity, aabb, mut position, moving_object, mut moving_object_state) in &mut query {
-        // if the character is moving upwards
-        if velocity.value.y > 0.0 {
-            if let Some(ceiling_y) = collides_with_ceiling(aabb, *position, &map) {
-                position.value.y = ceiling_y - aabb.halfsize.y;
-                velocity.value.y = 0.0;
-                moving_object_state.at_ceiling = true;
-            } else {
-                moving_object_state.at_ceiling = false;
-            }
+fn apply_gravity(mut query: Query<(&mut MovingObject, &Gravity)>) {
+    for (mut moving_object, gravity) in &mut query {
+        if moving_object.state.ground {
+            moving_object.velocity.value.y = 0.0;
         } else {
-            moving_object_state.at_ceiling = false;
-        }
-        // if the character is moving downwards
-        if velocity.value.y < 0.0 {
-            // and has ground under him
-            if let Some(ground_y) = has_ground(aabb, *position, &map) {
-                position.value.y = ground_y + aabb.halfsize.y;
-                velocity.value.y = 0.0;
-                moving_object_state.on_ground = true;
-            } else {
-                moving_object_state.on_ground = false;
-            }
-        } else {
-            moving_object_state.on_ground = false;
-        }
-        // if the character is moving left
-        if velocity.value.x < 0.0 {
-            // if there is a collision with a left wall
-            if let Some(left_wall_x) = collides_with_left_wall(aabb, *position, &map) {
-                velocity.value.x = 0.0;
-                // if the character was overlapping with it the last frame
-                if moving_object.old_position.value.x - aabb.halfsize.x >= left_wall_x {
-                    position.value.x = left_wall_x + aabb.halfsize.x;
-                    moving_object_state.pushes_left_wall = true;
-                }
-            } else {
-                moving_object_state.pushes_left_wall = false;
-            }
-        } else {
-            moving_object_state.pushes_left_wall = false;
-        }
-        // if the character is moving right
-        if velocity.value.x > 0.0 {
-            // if there is a collision with a right wall
-            if let Some(right_wall_x) = collides_with_right_wall(aabb, *position, &map) {
-                velocity.value.x = 0.0;
-                // if the character was overlapping with it the last frame
-                if moving_object.old_position.value.x + aabb.halfsize.x <= right_wall_x {
-                    position.value.x = right_wall_x - aabb.halfsize.x;
-                    moving_object_state.pushes_right_wall = true;
-                }
-            } else {
-                moving_object_state.pushes_right_wall = false;
-            }
-        } else {
-            moving_object_state.pushes_right_wall = false;
+            moving_object.velocity.value.y -= gravity.force;
         }
     }
 }
 
-fn apply_gravity(mut query: Query<(&mut Velocity, &Gravity, &MovingObjectState)>) {
-    for (mut velocity, gravity, state) in &mut query {
-        if state.on_ground {
-            velocity.value.y = 0.0;
+fn penetration_depth(
+    a_aabb: &AABB,
+    a_pos: Position,
+    b_aabb: &AABB,
+    b_pos: Position,
+) -> Option<Vec2> {
+    if collides(a_aabb, a_pos, b_aabb, b_pos) {
+        let x = if a_pos.value.x > b_pos.value.x {
+            (b_pos.value.x + b_aabb.halfsize.x) - (a_pos.value.x - a_aabb.halfsize.x)
         } else {
-            velocity.value.y -= gravity.force;
-        }
+            (b_pos.value.x - b_aabb.halfsize.x) - (a_pos.value.x + a_aabb.halfsize.x)
+        };
+        let y = if a_pos.value.y > b_pos.value.y {
+            (b_pos.value.y + b_aabb.halfsize.y) - (a_pos.value.y - a_aabb.halfsize.y)
+        } else {
+            (b_pos.value.y - b_aabb.halfsize.y) - (a_pos.value.y + a_aabb.halfsize.y)
+        };
+
+        return Some(Vec2::new(x, y));
     }
+    None
+}
+
+fn collides(a_aabb: &AABB, a_pos: Position, b_aabb: &AABB, b_pos: Position) -> bool {
+    (a_pos.value.x - a_aabb.halfsize.x) < (b_pos.value.x + b_aabb.halfsize.x)
+        && (a_pos.value.x + a_aabb.halfsize.x) > (b_pos.value.x - b_aabb.halfsize.x)
+        && (a_pos.value.y + a_aabb.halfsize.y) > (b_pos.value.y - b_aabb.halfsize.y)
+        && (a_pos.value.y - a_aabb.halfsize.y) < (b_pos.value.y + b_aabb.halfsize.y)
 }
