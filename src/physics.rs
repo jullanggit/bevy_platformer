@@ -44,10 +44,16 @@ impl Position {
 #[reflect(Component)]
 pub struct AABB {
     pub halfsize: Vec2,
+    pub center: Vec2,
 }
 impl AABB {
-    pub const fn new(halfsize: Vec2) -> Self {
-        Self { halfsize }
+    pub fn new(halfsize: Vec2, center: Vec2) -> Self {
+        Self { halfsize, center }
+    }
+
+    pub fn contains(&self, other: &AABB) -> bool {
+        // self.halfsize.x
+        todo!()
     }
 }
 
@@ -111,6 +117,69 @@ pub struct MovingSpriteSheetBundle {
     pub spritesheet_bundle: SpriteSheetBundle,
     pub gravity: Gravity,
 }
+// Quadtree
+pub struct Quadtree {
+    boundary: AABB,
+    capacity: usize,
+    objects: Vec<Entity>,
+    divided: bool,
+    // Children
+    nw: Option<Box<Quadtree>>,
+    ne: Option<Box<Quadtree>>,
+    sw: Option<Box<Quadtree>>,
+    se: Option<Box<Quadtree>>,
+}
+impl Quadtree {
+    pub fn new(boundary: AABB, capacity: usize) -> Self {
+        Self {
+            boundary,
+            capacity,
+            objects: Vec::new(),
+            divided: false,
+            nw: None,
+            ne: None,
+            sw: None,
+            se: None,
+        }
+    }
+
+    pub fn subdivide(&mut self) {
+        let half_boundary = self.boundary.halfsize / 2.0;
+        let center = self.boundary.center;
+
+        let nw = AABB {
+            center: Vec2::new(center.x - half_boundary.x, center.y + half_boundary.y),
+            halfsize: Vec2::new(half_boundary.x, half_boundary.y),
+        };
+        self.nw = Some(Box::new(Quadtree::new(nw, self.capacity)));
+
+        let ne = AABB {
+            center: Vec2::new(center.x + half_boundary.x, center.y + half_boundary.y),
+            halfsize: Vec2::new(half_boundary.x, half_boundary.y),
+        };
+        self.ne = Some(Box::new(Quadtree::new(ne, self.capacity)));
+
+        let sw = AABB {
+            center: Vec2::new(center.x - half_boundary.x, center.y - half_boundary.y),
+            halfsize: Vec2::new(half_boundary.x, half_boundary.y),
+        };
+        self.sw = Some(Box::new(Quadtree::new(sw, self.capacity)));
+
+        let se = AABB {
+            center: Vec2::new(center.x + half_boundary.x, center.y - half_boundary.y),
+            halfsize: Vec2::new(half_boundary.x, half_boundary.y),
+        };
+        self.se = Some(Box::new(Quadtree::new(se, self.capacity)));
+
+        self.divided = true;
+    }
+
+    pub fn insert(&mut self, entity: Entity, aabb: &AABB) -> bool {
+        // Check if the aabb fits inside the quadrtree's boundary
+        // if !self.boundary
+        todo!()
+    }
+}
 
 fn update_physics(mut query: Query<(&mut MovingObject, &mut Transform)>, time: Res<Time>) {
     for (mut moving_object, mut transform) in &mut query {
@@ -141,13 +210,21 @@ fn stop_movement(mut query: Query<&mut MovingObject>) {
     }
 }
 
-fn collisions(mut query: Query<(&AABB, &mut MovingObject)>) {
+fn collisions(mut query: Query<(&AABB, &mut MovingObject, Entity)>) {
+    query.iter_mut().for_each(|(_, mut moving_object, _)| {
+        // unset states
+        moving_object.state.left = false;
+        moving_object.state.right = false;
+        moving_object.state.ground = false;
+        moving_object.state.ceiling = false;
+    });
     // generate over all combinations of 2
     let mut combinations = query.iter_combinations_mut::<2>();
 
     // iterate over combinations
-    while let Some([(a_aabb, mut a_moving_object), (b_aabb, mut b_moving_object)]) =
-        combinations.fetch_next()
+    while let Some(
+        [(a_aabb, mut a_moving_object, a_entity), (b_aabb, mut b_moving_object, b_entity)],
+    ) = combinations.fetch_next()
     {
         // if both objects have a mass of 0 (are stationary), continue to next iteration
         if a_moving_object.mass == 0.0 && b_moving_object.mass == 0.0 {
@@ -167,7 +244,7 @@ fn collisions(mut query: Query<(&AABB, &mut MovingObject)>) {
             if penetration_depth.x.abs() < penetration_depth.y.abs() {
                 // adjusting position
                 a_moving_object.position.value.x += (penetration_depth.x * a_ratio);
-                b_moving_object.position.value.x += (penetration_depth.x * b_ratio);
+                b_moving_object.position.value.x -= (penetration_depth.x * b_ratio);
 
                 // setting horizontal states
                 if penetration_depth.x >= 0.0 {
@@ -180,7 +257,7 @@ fn collisions(mut query: Query<(&AABB, &mut MovingObject)>) {
             } else {
                 // adjusting position
                 a_moving_object.position.value.y += (penetration_depth.y * a_ratio);
-                b_moving_object.position.value.y += (penetration_depth.y * b_ratio);
+                b_moving_object.position.value.y -= (penetration_depth.y * b_ratio);
 
                 if penetration_depth.y >= 0.0 {
                     a_moving_object.state.ground = true;
@@ -193,6 +270,7 @@ fn collisions(mut query: Query<(&AABB, &mut MovingObject)>) {
         }
     }
 }
+
 fn apply_gravity(mut query: Query<(&mut MovingObject, &Gravity)>) {
     for (mut moving_object, gravity) in &mut query {
         if moving_object.state.ground {
