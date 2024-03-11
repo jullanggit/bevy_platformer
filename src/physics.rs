@@ -62,7 +62,7 @@ impl Gravity {
     }
 }
 
-#[derive(Component, Clone, Copy, Default, Reflect)]
+#[derive(Component, Clone, Copy, Default, Reflect, Debug)]
 #[reflect(Component)]
 pub struct MovingObjectState {
     pub right: bool,
@@ -71,7 +71,7 @@ pub struct MovingObjectState {
     pub ceiling: bool,
 }
 
-#[derive(Component, Clone, Copy, Default, Reflect)]
+#[derive(Component, Clone, Copy, Default, Reflect, Debug)]
 #[reflect(Component)]
 pub struct MovingObject {
     // timeless
@@ -170,37 +170,26 @@ fn collisions(mut query: Query<(&AABB, &mut MovingObject)>) {
                 b_moving_object.position.value.x += (penetration_depth.x * b_ratio);
 
                 // setting horizontal states
-                if penetration_depth.x > 0.0 {
-                    a_moving_object.state.right = true;
-                    b_moving_object.state.left = true;
-                } else {
+                if penetration_depth.x >= 0.0 {
                     a_moving_object.state.left = true;
                     b_moving_object.state.right = true;
+                } else {
+                    a_moving_object.state.right = true;
+                    b_moving_object.state.left = true;
                 }
             } else {
                 // adjusting position
                 a_moving_object.position.value.y += (penetration_depth.y * a_ratio);
                 b_moving_object.position.value.y += (penetration_depth.y * b_ratio);
 
-                if penetration_depth.y > 0.0 {
-                    a_moving_object.state.ceiling = true;
-                    b_moving_object.state.ground = true;
-                } else {
+                if penetration_depth.y >= 0.0 {
                     a_moving_object.state.ground = true;
                     b_moving_object.state.ceiling = true;
+                } else {
+                    a_moving_object.state.ceiling = true;
+                    b_moving_object.state.ground = true;
                 }
             }
-        } else {
-            // if there is no collision, set all fields to false
-            a_moving_object.state.left = false;
-            a_moving_object.state.right = false;
-            a_moving_object.state.ceiling = false;
-            a_moving_object.state.ground = false;
-
-            b_moving_object.state.left = false;
-            b_moving_object.state.right = false;
-            b_moving_object.state.ceiling = false;
-            b_moving_object.state.ground = false;
         }
     }
 }

@@ -68,12 +68,14 @@ pub fn setup_map(mut commands: Commands, sprites: Res<Sprites>, images: Res<Asse
 
         let original_position = block.0.as_vec2() + halfsize;
 
+        // convert to bevy coordinates
         let mut position = Vec2::new(
             original_position.x - size.as_vec2().x / 2.0,
             size.as_vec2().y / 2.0 - original_position.y,
         );
         // scaling the values up
         halfsize *= TILE_SIZE;
+        halfsize += TILE_SIZE / 2.0;
         position *= TILE_SIZE;
 
         commands.spawn((
