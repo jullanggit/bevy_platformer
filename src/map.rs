@@ -93,7 +93,7 @@ pub fn setup_map(mut commands: Commands, sprites: Res<Sprites>, images: Res<Asse
                     },
                     ..default()
                 },
-                aabb: AABB::new(halfsize, Vec2::ZERO),
+                aabb: AABB::new(halfsize),
                 moving_object: MovingObject {
                     position: Position::new(position),
                     ..default()

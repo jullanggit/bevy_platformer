@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, reflect::List};
 
 pub struct PhysicsPlugin;
 impl Plugin for PhysicsPlugin {
@@ -40,20 +40,23 @@ impl Position {
     }
 }
 
-#[derive(Component, Default, Reflect, Debug)]
+#[derive(Component, Default, Reflect, Debug, Clone)]
 #[reflect(Component)]
 pub struct AABB {
     pub halfsize: Vec2,
-    pub center: Vec2,
 }
 impl AABB {
-    pub fn new(halfsize: Vec2, center: Vec2) -> Self {
-        Self { halfsize, center }
+    pub fn new(halfsize: Vec2) -> Self {
+        Self { halfsize }
     }
 
-    pub fn contains(&self, other: &AABB) -> bool {
-        // self.halfsize.x
-        todo!()
+    pub fn contains(&self, self_pos: Vec2, other: &AABB, other_pos: Vec2) -> bool {
+        // horizontal
+        self_pos.x - self.halfsize.x < other_pos.x - other.halfsize.x
+            && self_pos.x + self.halfsize.x > other_pos.x + other.halfsize.x
+            // vertical
+            && self_pos.y - self.halfsize.y < other_pos.y - other.halfsize.y
+            && self_pos.y + self.halfsize.y > other_pos.y + other.halfsize.y
     }
 }
 
@@ -120,8 +123,9 @@ pub struct MovingSpriteSheetBundle {
 // Quadtree
 pub struct Quadtree {
     boundary: AABB,
+    center: Position,
     capacity: usize,
-    objects: Vec<Entity>,
+    objects: Vec<(Entity, AABB, Position)>,
     divided: bool,
     // Children
     nw: Option<Box<Quadtree>>,
@@ -130,9 +134,10 @@ pub struct Quadtree {
     se: Option<Box<Quadtree>>,
 }
 impl Quadtree {
-    pub fn new(boundary: AABB, capacity: usize) -> Self {
+    pub fn new(boundary: AABB, center: Vec2, capacity: usize) -> Self {
         Self {
             boundary,
+            center: Position::new(center),
             capacity,
             objects: Vec::new(),
             divided: false,
@@ -145,39 +150,120 @@ impl Quadtree {
 
     pub fn subdivide(&mut self) {
         let half_boundary = self.boundary.halfsize / 2.0;
-        let center = self.boundary.center;
+        let center = self.center.value;
 
+        // Northwest
         let nw = AABB {
-            center: Vec2::new(center.x - half_boundary.x, center.y + half_boundary.y),
             halfsize: Vec2::new(half_boundary.x, half_boundary.y),
         };
-        self.nw = Some(Box::new(Quadtree::new(nw, self.capacity)));
+        let nw_center = Vec2::new(center.x - half_boundary.x, center.y + half_boundary.y);
+        self.nw = Some(Box::new(Quadtree::new(nw, nw_center, self.capacity)));
 
+        // Northeast
         let ne = AABB {
-            center: Vec2::new(center.x + half_boundary.x, center.y + half_boundary.y),
             halfsize: Vec2::new(half_boundary.x, half_boundary.y),
         };
-        self.ne = Some(Box::new(Quadtree::new(ne, self.capacity)));
+        let ne_center = Vec2::new(center.x + half_boundary.x, center.y + half_boundary.y);
+        self.ne = Some(Box::new(Quadtree::new(ne, ne_center, self.capacity)));
 
+        // Southwest
         let sw = AABB {
-            center: Vec2::new(center.x - half_boundary.x, center.y - half_boundary.y),
             halfsize: Vec2::new(half_boundary.x, half_boundary.y),
         };
-        self.sw = Some(Box::new(Quadtree::new(sw, self.capacity)));
+        let sw_center = Vec2::new(center.x - half_boundary.x, center.y - half_boundary.y);
+        self.sw = Some(Box::new(Quadtree::new(sw, sw_center, self.capacity)));
 
+        // Southeast
         let se = AABB {
-            center: Vec2::new(center.x + half_boundary.x, center.y - half_boundary.y),
             halfsize: Vec2::new(half_boundary.x, half_boundary.y),
         };
-        self.se = Some(Box::new(Quadtree::new(se, self.capacity)));
+        let se_center = Vec2::new(center.x + half_boundary.x, center.y - half_boundary.y);
+        self.se = Some(Box::new(Quadtree::new(se, se_center, self.capacity)));
 
         self.divided = true;
+
+        // self.objects.iter().for_each(|(entity, aabb, position)| {});
+        for (entity, aabb, position) in self.objects.clone() {
+            self.insert(entity, &aabb, position);
+        }
     }
 
-    pub fn insert(&mut self, entity: Entity, aabb: &AABB) -> bool {
-        // Check if the aabb fits inside the quadrtree's boundary
-        // if !self.boundary
-        todo!()
+    pub fn insert(&mut self, entity: Entity, aabb: &AABB, position: Position) -> bool {
+        // Check if the aabb intersects the nodes boundary
+        if !collides(&self.boundary, self.center, aabb, position) {
+            return false;
+        }
+        // If the node hasnt been subdivided yet
+        if !self.divided {
+            // and it still has capacity
+            if self.objects.len() < self.capacity {
+                // add it to the objects
+                self.objects.push((entity, aabb.clone(), position.clone()));
+                return true;
+            }
+            // if it doesnt have capacity anymore, subdivide
+            self.subdivide();
+        }
+
+        // insert it into any child it intersects with
+        let mut inserted = false;
+        let nw_center = self.nw.as_mut().unwrap().center.clone();
+        if collides(
+            &self.nw.as_mut().unwrap().boundary,
+            nw_center,
+            aabb,
+            position,
+        ) {
+            inserted |= self.nw.as_mut().unwrap().insert(entity, aabb, position);
+        }
+        let ne_center = self.ne.as_mut().unwrap().center.clone();
+        if collides(
+            &self.se.as_mut().unwrap().boundary,
+            ne_center,
+            aabb,
+            position,
+        ) {
+            inserted |= self.ne.as_mut().unwrap().insert(entity, aabb, position);
+        }
+        let sw_center = self.sw.as_mut().unwrap().center.clone();
+        if collides(
+            &self.sw.as_mut().unwrap().boundary,
+            sw_center,
+            aabb,
+            position,
+        ) {
+            inserted |= self.sw.as_mut().unwrap().insert(entity, aabb, position);
+        }
+        let se_center = self.se.as_mut().unwrap().center.clone();
+        if collides(
+            &self.se.as_mut().unwrap().boundary,
+            se_center,
+            aabb,
+            position,
+        ) {
+            inserted |= self.se.as_mut().unwrap().insert(entity, aabb, position);
+        }
+
+        inserted
+    }
+
+    pub fn query(&self, aabb: &AABB, position: Position, found: &mut Vec<Entity>) {
+        // dont do anything if the range doesnt intersect with the nodes boundary
+        if !collides(&self.boundary, self.center, aabb, position) {
+            return;
+        }
+
+        // query child nodes
+        if self.divided {
+            self.nw.as_ref().unwrap().query(aabb, position, found);
+            self.ne.as_ref().unwrap().query(aabb, position, found);
+            self.sw.as_ref().unwrap().query(aabb, position, found);
+            self.se.as_ref().unwrap().query(aabb, position, found);
+        } else {
+            self.objects
+                .iter()
+                .for_each(|object| found.push(object.clone()));
+        }
     }
 }
 
