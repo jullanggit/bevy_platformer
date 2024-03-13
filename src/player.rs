@@ -92,7 +92,6 @@ fn spawn_player(mut commands: Commands, asset_server: Res<AssetServer>) {
                 mass: 1.0,
                 ..default()
             },
-            ..default()
         },
         ImageScaleMode::Sliced(TextureSlicer {
             border: BorderRect::square(10.0),

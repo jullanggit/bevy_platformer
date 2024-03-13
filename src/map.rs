@@ -7,7 +7,20 @@ use bevy::prelude::*;
 pub struct MapPlugin;
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(SpritesLoadingStates::Finished), setup_map);
+        app.init_resource::<MapAabb>()
+            .add_systems(OnEnter(SpritesLoadingStates::Finished), setup_map);
+    }
+}
+
+#[derive(Resource)]
+pub struct MapAabb {
+    pub size: AABB,
+}
+impl Default for MapAabb {
+    fn default() -> Self {
+        Self {
+            size: AABB::new(Vec2::splat(100.0)),
+        }
     }
 }
 
@@ -17,6 +30,10 @@ pub fn setup_map(mut commands: Commands, sprites: Res<Sprites>, images: Res<Asse
     // loading image and getting image size
     let level1_image = images.get(&sprites.level1).unwrap();
     let size = level1_image.size();
+
+    commands.insert_resource(MapAabb {
+        size: AABB::new(size.as_vec2() * TILE_SIZE / 2.0),
+    });
 
     let mut blocks: Vec<(UVec2, UVec2)> = Vec::new();
     // iterating over every pixel
