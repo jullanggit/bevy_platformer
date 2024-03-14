@@ -6,6 +6,7 @@ use bevy_inspector_egui::quick::WorldInspectorPlugin;
 
 use asset_loader::AssetLoaderPlugin;
 use bevy::{asset::AssetMetaCheck, prelude::*};
+use boids::BoidPlugin;
 use camera::CameraPlugin;
 use fps::FpsPlugin;
 use map::MapPlugin;
@@ -49,6 +50,7 @@ fn main() {
         MapPlugin,
         AssetLoaderPlugin,
         PhysicsPlugin,
+        BoidPlugin,
     ));
 
     app.run();

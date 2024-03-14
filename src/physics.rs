@@ -160,7 +160,7 @@ pub fn collisions(mut query: Query<(&AABB, &mut MovingObject, Entity)>, map_aabb
     let mut checks = Vec::new();
 
     // Iterate over all entities that have mass
-    for (aabb, moving_object, entity) in &query {
+    for (aabb, mut moving_object, entity) in &mut query {
         if moving_object.mass == 0.0 {
             continue;
         }
