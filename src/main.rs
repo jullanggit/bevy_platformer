@@ -15,6 +15,7 @@ use player::Playerplugin;
 use wasm::WasmPlugin;
 
 mod asset_loader;
+mod boids;
 mod camera;
 mod fps;
 mod map;

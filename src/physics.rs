@@ -122,7 +122,6 @@ pub struct MovingSpriteSheetBundle {
     pub spritesheet_bundle: SpriteSheetBundle,
     pub gravity: Gravity,
 }
-// Quadtree
 
 fn update_physics(mut query: Query<(&mut MovingObject, &mut Transform)>, time: Res<Time>) {
     for (mut moving_object, mut transform) in &mut query {
@@ -154,25 +153,23 @@ fn stop_movement(mut query: Query<&mut MovingObject>) {
 }
 
 pub fn collisions(mut query: Query<(&AABB, &mut MovingObject, Entity)>, map_aabb: Res<MapAabb>) {
-    // unset states for all entites
-    query.iter_mut().for_each(|(_, mut moving_object, _)| {
-        // unset states
-        moving_object.state.left = false;
-        moving_object.state.right = false;
-        moving_object.state.ground = false;
-        moving_object.state.ceiling = false;
-    });
-
     // create quadtree
     let quadtree = build_quadtree(&query, &map_aabb);
 
     // create vec with all collisions to check
     let mut checks = Vec::new();
 
+    // Iterate over all entities that have mass
     for (aabb, moving_object, entity) in &query {
         if moving_object.mass == 0.0 {
             continue;
         }
+        // unset states
+        moving_object.state.left = false;
+        moving_object.state.right = false;
+        moving_object.state.ground = false;
+        moving_object.state.ceiling = false;
+
         // create empty vec
         let mut to_check_collision = Vec::new();
         // add all entities to check against
