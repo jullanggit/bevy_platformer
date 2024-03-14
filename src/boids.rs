@@ -35,7 +35,7 @@ fn move_boids(mut query: Query<(&mut MovingObject, Entity), With<Boid>>) {
     for (moving_object, entity) in &query {
         let mut final_velocity: Vec2;
 
-        // steer towards percieved center (0.5%)
+        // steer towards percieved center
         let position = moving_object.position.value;
         let percieved_center = (total_position - position) / relative_boids_amount;
         final_velocity = (percieved_center - position) / 20.0;
