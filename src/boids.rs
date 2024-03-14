@@ -78,7 +78,7 @@ fn spawn_boids(mut commands: Commands) {
             commands.spawn((
                 Name::new("Boid"),
                 MovingObject {
-                    position: Position::new(Vec2::new(i as f32, j as f32)),
+                    position: Position::new(Vec2::new((i * 10) as f32, (j * 10) as f32)),
                     ..default()
                 },
                 SpriteBundle {
