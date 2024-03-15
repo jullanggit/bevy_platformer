@@ -282,8 +282,21 @@ fn penetration_depth(
 }
 
 pub fn collides(a_aabb: &AABB, a_pos: Position, b_aabb: &AABB, b_pos: Position) -> bool {
-    (a_pos.value.x - a_aabb.halfsize.x) < (b_pos.value.x + b_aabb.halfsize.x)
-        && (a_pos.value.x + a_aabb.halfsize.x) > (b_pos.value.x - b_aabb.halfsize.x)
-        && (a_pos.value.y + a_aabb.halfsize.y) > (b_pos.value.y - b_aabb.halfsize.y)
-        && (a_pos.value.y - a_aabb.halfsize.y) < (b_pos.value.y + b_aabb.halfsize.y)
+    let a_pos = a_pos.value;
+    let b_pos = b_pos.value;
+
+    (a_pos.x - a_aabb.halfsize.x) < (b_pos.x + b_aabb.halfsize.x)
+        && (a_pos.x + a_aabb.halfsize.x) > (b_pos.x - b_aabb.halfsize.x)
+        && (a_pos.y + a_aabb.halfsize.y) > (b_pos.y - b_aabb.halfsize.y)
+        && (a_pos.y - a_aabb.halfsize.y) < (b_pos.y + b_aabb.halfsize.y)
+}
+
+pub fn intersects(a_aabb: &AABB, a_pos: Position, b_pos: Position) -> bool {
+    let a_pos = a_pos.value;
+    let b_pos = b_pos.value;
+
+    (a_pos.x - a_aabb.halfsize.x) < b_pos.x
+        && (a_pos.x + a_aabb.halfsize.x) > b_pos.x
+        && (a_pos.y + a_aabb.halfsize.y) > b_pos.y
+        && (a_pos.y - a_aabb.halfsize.y) < b_pos.y
 }
