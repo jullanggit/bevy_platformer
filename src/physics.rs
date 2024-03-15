@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::{map::MapAabb, quadtree::build_quadtree};
+use crate::{map::MapAabb, quadtree::build_aabb_quadtree};
 
 pub struct PhysicsPlugin;
 impl Plugin for PhysicsPlugin {
@@ -154,7 +154,7 @@ fn stop_movement(mut query: Query<&mut MovingObject>) {
 
 pub fn collisions(mut query: Query<(&AABB, &mut MovingObject, Entity)>, map_aabb: Res<MapAabb>) {
     // create quadtree
-    let quadtree = build_quadtree(&query, &map_aabb);
+    let quadtree = build_aabb_quadtree(&query, &map_aabb);
 
     // create vec with all collisions to check
     let mut checks = Vec::new();

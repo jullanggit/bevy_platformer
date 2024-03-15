@@ -11,6 +11,7 @@ bevy_asset_loader = { version = "0.20.0", features = ["2d"] }
 bevy-inspector-egui = "0.23.4"
 # required for wasm
 web-sys = "0.3.67"
+rand = "0.8.5"
 
 [profile.dev]
 opt-level = 1

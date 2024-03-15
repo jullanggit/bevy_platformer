@@ -1,4 +1,5 @@
 use bevy::{prelude::*, utils::HashMap};
+use rand::{random, thread_rng, Rng};
 
 use crate::{
     map::MapAabb,
@@ -18,12 +19,13 @@ impl Plugin for BoidPlugin {
 struct Boid;
 
 fn move_boids(mut query: Query<(&mut MovingObject, Entity), With<Boid>>, map_aabb: Res<MapAabb>) {
-    let distance_threshold = 100.0;
+    let distance_threshold = 20.0;
     let max_velocity = 400.0;
+    let min_velocity = 20.0;
     let view_distance = 100.0;
     let view_distance_aabb = AABB::new(Vec2::splat(view_distance));
 
-    let avoid_factor = 0.5;
+    let avoid_factor = 0.2;
     let centering_factor = 0.05;
     let matching_factor = 0.1;
 
@@ -32,7 +34,7 @@ fn move_boids(mut query: Query<(&mut MovingObject, Entity), With<Boid>>, map_aab
 
     let mut boids = Vec::new();
 
-    // collect all boids, together with all other boids in its view range
+    // collect all boids and the boids in their view range
     for (moving_object, entity) in &query {
         let position = moving_object.position;
 
@@ -42,107 +44,91 @@ fn move_boids(mut query: Query<(&mut MovingObject, Entity), With<Boid>>, map_aab
         boids.push((entity, other_boids));
     }
 
+    // iterate over all boids and the boids in their view range
     for (a_entity, others) in boids {
-        let final_velocity: Vec2;
-        let (tota_position, total_velocity) = others.iter().fold(
-            (Vec2::ZERO, Vec2::ZERO),
-            |(pos_acc, vel_acc), (b_entity)| {
-                // just return the accumulators if a and b are the same entity, essentialy skipping the
-                // iteration
+        let mut final_velocity = Vec2::ZERO;
+
+        // Calculate total_position, total_velocity and how much should be steered away from other
+        // boids
+        let (total_position, total_velocity, boids_amount) = others.iter().fold(
+            (Vec2::ZERO, Vec2::ZERO, 0.0),
+            |(pos_acc, vel_acc, amount_acc), b_entity| {
+                // just return the accumulators if a and b are the same entity, essentialy skipping the iteration
                 if a_entity == *b_entity {
-                    return (pos_acc, vel_acc);
+                    return (pos_acc, vel_acc, amount_acc);
                 }
                 // get components of both entities
-                let [(mut a_moving_object, _), (mut b_moving_object, _)] =
-                    query.get_many_mut([a_entity, *b_entity]).unwrap();
+                let [(a_moving_object, _), (b_moving_object, _)] =
+                    query.get_many([a_entity, *b_entity]).unwrap();
                 // define values for easier access
                 let a_position = a_moving_object.position.value;
-                let a_velocity = a_moving_object.velocity.value;
                 let b_position = b_moving_object.position.value;
                 let b_velocity = b_moving_object.velocity.value;
 
+                // steer away from other boids
+                let distance = a_position.distance(b_position);
+                // if distance between boids is less than the threshold, steer away
+                if distance < distance_threshold && distance > 0.0 {
+                    final_velocity += (a_position - b_position) * avoid_factor;
+                }
+
                 // add to the accumulator
-                (pos_acc + b_position, vel_acc + b_velocity)
+                (pos_acc + b_position, vel_acc + b_velocity, amount_acc + 1.0)
             },
         );
-    }
-
-    // old
-    // for calculating "center of mass"
-    let relative_boids_amount = query.iter().len() as f32 - 1.0;
-
-    // calculate total position and velocity
-    let (total_position, total_velocity) = query.iter().fold(
-        (Vec2::ZERO, Vec2::ZERO),
-        |(pos_acc, vel_acc), (moving_object, _)| {
-            (
-                pos_acc + moving_object.position.value,
-                vel_acc + moving_object.velocity.value,
-            )
-        },
-    );
-    let mut velocities = HashMap::with_capacity(query.iter().len());
-    for (moving_object, entity) in &query {
-        let mut final_velocity: Vec2;
+        // Get components of a_entity again, might be able to optimize
+        let (mut a_moving_object, _) = query.get_mut(a_entity).unwrap();
+        let a_position = a_moving_object.position.value;
+        let a_velocity = a_moving_object.velocity.value;
 
         // steer towards percieved center
-        let position = moving_object.position.value;
-        let percieved_center = (total_position - position) / relative_boids_amount;
-        final_velocity = (percieved_center - position) * centering_factor;
-
-        // steer away from other boids
-        for (moving_object2, entity2) in &query {
-            if entity == entity2 {
-                continue;
-            }
-            let position2 = moving_object2.position.value;
-
-            let distance = position.distance(position2);
-
-            // if distance between boids is less than the threshold
-            if distance < distance_threshold && distance > 0.0 {
-                // Normalize the direction vector and scale it by the inverse of the distance (or another function to control the avoidance strength)
-                final_velocity += (position - position2) * avoid_factor;
-            }
+        if boids_amount > 0.0 {
+            let percieved_center = (total_position - a_position) / boids_amount;
+            final_velocity += (percieved_center - a_position) * centering_factor;
         }
 
         // steer in the same direction as the other boids
-        let velocity = moving_object.velocity.value;
-        let percieved_velocity = (total_velocity - velocity) / relative_boids_amount;
-        final_velocity += (percieved_velocity - velocity) * matching_factor;
-
-        // Set maximal velocity
-        if final_velocity.length() > max_velocity {
-            final_velocity = final_velocity.normalize() * max_velocity;
+        if boids_amount > 0.0 {
+            let percieved_velocity = (total_velocity - a_velocity) / boids_amount;
+            final_velocity += (percieved_velocity - a_velocity) * matching_factor;
         }
-        velocities.insert(entity, final_velocity);
-    }
 
-    // set velocities
-    for (mut moving_object, entity) in &mut query {
-        moving_object.velocity.value = velocities.get(&entity).unwrap().clone();
+        // Normalize velocity
+        let final_velocity_length = final_velocity.length();
+        if final_velocity_length > max_velocity {
+            final_velocity = final_velocity.normalize() * max_velocity;
+        } else if final_velocity_length < min_velocity {
+            final_velocity = final_velocity.normalize() * min_velocity;
+        }
+        dbg!(final_velocity.length());
+        a_moving_object.velocity.value = final_velocity;
     }
 }
 
-fn spawn_boids(mut commands: Commands) {
-    for i in 0..10 {
-        for j in 0..10 {
-            commands.spawn((
-                Name::new("Boid"),
-                MovingObject {
-                    position: Position::new(Vec2::new((i * 10) as f32, (j * 10) as f32)),
-                    velocity: Velocity::new(Vec2::new(10.0, 0.0)),
+fn spawn_boids(mut commands: Commands, map_aabb: Res<MapAabb>) {
+    let mut rng = thread_rng();
+    for _ in 0..1000 {
+        commands.spawn((
+            Name::new("Boid"),
+            MovingObject {
+                position: Position::new(Vec2::new(
+                    rng.gen_range(-map_aabb.size.halfsize.x..map_aabb.size.halfsize.x),
+                    rng.gen_range(-map_aabb.size.halfsize.y..map_aabb.size.halfsize.y),
+                )),
+                velocity: Velocity::new(Vec2::new(
+                    rng.gen_range(0.0..300.0),
+                    rng.gen_range(0.0..300.0),
+                )),
+                ..default()
+            },
+            SpriteBundle {
+                sprite: Sprite {
+                    custom_size: Some(Vec2::splat(10.0)),
                     ..default()
                 },
-                SpriteBundle {
-                    sprite: Sprite {
-                        custom_size: Some(Vec2::splat(10.0)),
-                        ..default()
-                    },
-                    ..default()
-                },
-                Boid,
-            ));
-        }
+                ..default()
+            },
+            Boid,
+        ));
     }
 }
