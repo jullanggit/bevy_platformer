@@ -12,7 +12,7 @@ impl Plugin for MapPlugin {
     }
 }
 
-#[derive(Resource)]
+#[derive(Resource, Debug)]
 pub struct MapAabb {
     pub size: AABB,
 }

@@ -2,7 +2,8 @@ use bevy::{prelude::*, utils::HashMap};
 use rand::{random, thread_rng, Rng};
 
 use crate::{
-    map::MapAabb,
+    asset_loader::SpritesLoadingStates,
+    map::{setup_map, MapAabb},
     physics::{MovingObject, MovingSpriteBundle, Position, Velocity, AABB},
     quadtree::build_point_quadtree,
 };
@@ -10,8 +11,11 @@ use crate::{
 pub struct BoidPlugin;
 impl Plugin for BoidPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn_boids)
-            .add_systems(Update, move_boids);
+        app.add_systems(
+            OnEnter(SpritesLoadingStates::Finished),
+            spawn_boids.after(setup_map),
+        )
+        .add_systems(Update, move_boids);
     }
 }
 
@@ -22,11 +26,11 @@ fn move_boids(mut query: Query<(&mut MovingObject, Entity), With<Boid>>, map_aab
     let distance_threshold = 20.0;
     let max_velocity = 400.0;
     let min_velocity = 20.0;
-    let view_distance = 100.0;
+    let view_distance = 70.0;
     let view_distance_aabb = AABB::new(Vec2::splat(view_distance));
 
     let avoid_factor = 0.2;
-    let centering_factor = 0.05;
+    let centering_factor = 0.005;
     let matching_factor = 0.1;
 
     // new
@@ -95,13 +99,14 @@ fn move_boids(mut query: Query<(&mut MovingObject, Entity), With<Boid>>, map_aab
 
         // Normalize velocity
         let final_velocity_length = final_velocity.length();
-        if final_velocity_length > max_velocity {
-            final_velocity = final_velocity.normalize() * max_velocity;
-        } else if final_velocity_length < min_velocity {
-            final_velocity = final_velocity.normalize() * min_velocity;
+        if final_velocity_length > 0.0 {
+            if final_velocity_length > max_velocity {
+                final_velocity = final_velocity.normalize() * max_velocity;
+            } else if final_velocity_length < min_velocity {
+                final_velocity = final_velocity.normalize() * min_velocity;
+            }
         }
-        dbg!(final_velocity.length());
-        a_moving_object.velocity.value = final_velocity;
+        a_moving_object.velocity.value += final_velocity;
     }
 }
 

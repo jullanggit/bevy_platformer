@@ -250,7 +250,7 @@ pub fn build_point_quadtree<'a, T>(items: T, map_aabb: &MapAabb) -> PointQuadtre
 where
     T: IntoIterator<Item = (&'a MovingObject, Entity)>,
 {
-    let mut quadtree = PointQuadtree::new(map_aabb.size.clone(), Vec2::ZERO, 2);
+    let mut quadtree = PointQuadtree::new(map_aabb.size.clone(), Vec2::ZERO, 3);
     items.into_iter().for_each(|item| {
         quadtree.insert(item.1, item.0.position);
     });
