@@ -1,38 +1,62 @@
-use bevy::{prelude::*, utils::HashMap};
+use bevy::{prelude::*, utils::HashMap, window::PrimaryWindow};
 use rand::{random, thread_rng, Rng};
 
 use crate::{
     asset_loader::SpritesLoadingStates,
     map::{setup_map, MapAabb},
     physics::{MovingObject, MovingSpriteBundle, Position, Velocity, AABB},
+    player::Player,
     quadtree::build_point_quadtree,
 };
 
 pub struct BoidPlugin;
 impl Plugin for BoidPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            OnEnter(SpritesLoadingStates::Finished),
-            spawn_boids.after(setup_map),
-        )
-        .add_systems(Update, move_boids);
+        app.register_type::<BoidParameters>()
+            .init_resource::<BoidParameters>()
+            .add_systems(
+                OnEnter(SpritesLoadingStates::Finished),
+                spawn_boids.after(setup_map),
+            )
+            .add_systems(Update, move_boids);
     }
 }
 
 #[derive(Component)]
 struct Boid;
 
-fn move_boids(mut query: Query<(&mut MovingObject, Entity), With<Boid>>, map_aabb: Res<MapAabb>) {
-    let distance_threshold = 20.0;
-    let max_velocity = 400.0;
-    let min_velocity = 20.0;
-    let view_distance = 70.0;
-    let view_distance_aabb = AABB::new(Vec2::splat(view_distance));
+#[derive(Resource, Reflect, Default)]
+#[reflect(Resource)]
+pub struct BoidParameters {
+    max_velocity: f32,
+    min_velocity: f32,
+    view_distance: f32,
+    view_distance_aabb: AABB,
 
-    let avoid_factor = 0.2;
-    let centering_factor = 0.005;
-    let matching_factor = 0.1;
+    avoid_factor: f32,
+    centering_factor: f32,
+    matching_factor: f32,
+    multiplier: f32,
+    random_factor: f32,
 
+    pub disperse: bool,
+    disperse_factor: f32,
+
+    pub avoid_player: bool,
+    avoid_player_factor: f32,
+    avoid_player_distance: f32,
+
+    edge_avoidance_distance: f32,
+    edge_avoidance_strength: f32,
+}
+
+fn move_boids(
+    mut query: Query<(&mut MovingObject, Entity), (With<Boid>, Without<Player>)>,
+    map_aabb: Res<MapAabb>,
+    boid_params: Res<BoidParameters>,
+    window: Query<&Window, With<PrimaryWindow>>,
+    player_moving_object: Query<&MovingObject, With<Player>>,
+) {
     // new
     let quadtree = build_point_quadtree(&query, &map_aabb);
 
@@ -43,10 +67,12 @@ fn move_boids(mut query: Query<(&mut MovingObject, Entity), With<Boid>>, map_aab
         let position = moving_object.position;
 
         let mut other_boids = Vec::new();
-        quadtree.query(&view_distance_aabb, position, &mut other_boids);
+        quadtree.query(&boid_params.view_distance_aabb, position, &mut other_boids);
 
         boids.push((entity, other_boids));
     }
+
+    let mut rng = thread_rng();
 
     // iterate over all boids and the boids in their view range
     for (a_entity, others) in boids {
@@ -72,8 +98,9 @@ fn move_boids(mut query: Query<(&mut MovingObject, Entity), With<Boid>>, map_aab
                 // steer away from other boids
                 let distance = a_position.distance(b_position);
                 // if distance between boids is less than the threshold, steer away
-                if distance < distance_threshold && distance > 0.0 {
-                    final_velocity += (a_position - b_position) * avoid_factor;
+                if distance > 0.0 {
+                    let avoid_strength = boid_params.avoid_factor / distance; // Using square of the distance to calculate strength
+                    final_velocity += (a_position - b_position).normalize() * avoid_strength;
                 }
 
                 // add to the accumulator
@@ -85,44 +112,112 @@ fn move_boids(mut query: Query<(&mut MovingObject, Entity), With<Boid>>, map_aab
         let a_position = a_moving_object.position.value;
         let a_velocity = a_moving_object.velocity.value;
 
+        // Steer away from edges of the window
+        let window = window.get_single().expect("No Primary window");
+        let window_halfsize = 0.5 * Vec2::new(window.width(), window.height());
+
+        if a_position.x < -window_halfsize.x + boid_params.edge_avoidance_distance {
+            final_velocity.x += boid_params.edge_avoidance_strength
+        } else if a_position.x > window_halfsize.x - boid_params.edge_avoidance_distance {
+            final_velocity.x -= boid_params.edge_avoidance_strength
+        }
+        if a_position.y < -window_halfsize.y + boid_params.edge_avoidance_distance {
+            final_velocity.y += boid_params.edge_avoidance_strength
+        } else if a_position.y > window_halfsize.y - boid_params.edge_avoidance_distance {
+            final_velocity.y -= boid_params.edge_avoidance_strength
+        }
+
+        // Avoid player
+        if boid_params.avoid_player {
+            let player_position = player_moving_object.single().position.value;
+            let distance = a_position.distance(player_position);
+
+            if distance < boid_params.avoid_player_distance && distance > 0.0 {
+                let avoid_strength = boid_params.avoid_player_factor / distance; // Using square of the distance to calculate strength
+                final_velocity += (a_position - player_position).normalize() * avoid_strength;
+            }
+        }
+
         // steer towards percieved center
         if boids_amount > 0.0 {
             let percieved_center = (total_position - a_position) / boids_amount;
-            final_velocity += (percieved_center - a_position) * centering_factor;
+
+            match boid_params.disperse {
+                true => {
+                    final_velocity += (a_position - percieved_center)
+                        * boid_params.centering_factor
+                        * boid_params.disperse_factor
+                }
+                false => {
+                    final_velocity += (percieved_center - a_position) * boid_params.centering_factor
+                }
+            }
         }
 
         // steer in the same direction as the other boids
         if boids_amount > 0.0 {
-            let percieved_velocity = (total_velocity - a_velocity) / boids_amount;
-            final_velocity += (percieved_velocity - a_velocity) * matching_factor;
+            let percieved_velocity = ((total_velocity - a_velocity) / boids_amount).normalize()
+                * boid_params.max_velocity;
+            final_velocity += (percieved_velocity - a_velocity) * boid_params.matching_factor;
         }
 
         // Normalize velocity
         let final_velocity_length = final_velocity.length();
         if final_velocity_length > 0.0 {
-            if final_velocity_length > max_velocity {
-                final_velocity = final_velocity.normalize() * max_velocity;
-            } else if final_velocity_length < min_velocity {
-                final_velocity = final_velocity.normalize() * min_velocity;
+            if final_velocity_length > boid_params.max_velocity {
+                final_velocity = final_velocity.normalize() * boid_params.max_velocity;
+            } else if final_velocity_length < boid_params.min_velocity {
+                final_velocity = final_velocity.normalize() * boid_params.min_velocity;
             }
         }
-        a_moving_object.velocity.value += final_velocity;
+        // random movement
+        final_velocity.x +=
+            (rng.gen::<f32>() - 0.5) * boid_params.max_velocity * boid_params.random_factor;
+        final_velocity.y +=
+            (rng.gen::<f32>() - 0.5) * boid_params.max_velocity * boid_params.random_factor;
+
+        a_moving_object.velocity.value += final_velocity * boid_params.multiplier;
     }
 }
 
 fn spawn_boids(mut commands: Commands, map_aabb: Res<MapAabb>) {
     let mut rng = thread_rng();
+
+    let view_distance = 25.0;
+    commands.insert_resource(BoidParameters {
+        max_velocity: 600.0,
+        min_velocity: 40.0,
+        view_distance,
+        view_distance_aabb: AABB::new(Vec2::splat(view_distance)),
+
+        avoid_factor: 3.0,
+        centering_factor: 0.005,
+        matching_factor: 0.1,
+        multiplier: 2.0,
+        random_factor: 0.1,
+
+        disperse: false,
+        disperse_factor: 20.0,
+
+        avoid_player: false,
+        avoid_player_factor: 2000.0,
+        avoid_player_distance: 32.0,
+
+        edge_avoidance_distance: 10.0,
+        edge_avoidance_strength: 10.0,
+    });
+
     for _ in 0..1000 {
         commands.spawn((
             Name::new("Boid"),
             MovingObject {
                 position: Position::new(Vec2::new(
                     rng.gen_range(-map_aabb.size.halfsize.x..map_aabb.size.halfsize.x),
-                    rng.gen_range(-map_aabb.size.halfsize.y..map_aabb.size.halfsize.y),
+                    rng.gen_range(-map_aabb.size.halfsize.y..map_aabb.size.halfsize.y) / 2.0,
                 )),
                 velocity: Velocity::new(Vec2::new(
-                    rng.gen_range(0.0..300.0),
-                    rng.gen_range(0.0..300.0),
+                    rng.gen_range(-400.0..400.0),
+                    rng.gen_range(-400.0..400.0),
                 )),
                 ..default()
             },

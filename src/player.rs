@@ -1,4 +1,5 @@
 use crate::asset_loader::load_assets;
+use crate::boids::BoidParameters;
 use crate::map::TILE_SIZE;
 use crate::physics::{Gravity, MovingObject, MovingSpriteBundle, AABB, GRAVITY_CONSTANT};
 use bevy::prelude::*;
@@ -117,6 +118,7 @@ fn movement_controls(
     >,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
+    mut boid_params: ResMut<BoidParameters>,
 ) {
     let (mut moving_object, mut player_state, mut sprite, mut aabb, mut stretching) =
         query.single_mut();
@@ -209,6 +211,16 @@ fn movement_controls(
         stretching.currently_stretching = false;
     }
     sprite.custom_size = Some(aabb.halfsize * 2.0);
+
+    // Boids dispersion
+    if keyboard_input.just_pressed(KeyCode::KeyB) {
+        boid_params.disperse = !boid_params.disperse;
+    }
+
+    // boids avoid player
+    if keyboard_input.just_pressed(KeyCode::KeyP) {
+        boid_params.avoid_player = !boid_params.avoid_player;
+    }
 }
 
 fn initiate_jump(player_state: &mut PlayerState) {
