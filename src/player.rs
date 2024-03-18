@@ -4,9 +4,8 @@ use crate::map::TILE_SIZE;
 use crate::physics::{Gravity, MovingObject, MovingSpriteBundle, AABB, GRAVITY_CONSTANT};
 use bevy::prelude::*;
 
-const PLAYER_SPEED: f32 = 200.0;
+const PLAYER_SPEED: f32 = 400.0;
 pub const PLAYER_JUMP_FORCE: f32 = 600.0;
-const JUMP_TIME: u8 = 15;
 const PLAYER_TERMINAL_VELOCITY: f32 = 1000.0;
 
 pub struct Playerplugin;
@@ -15,13 +14,17 @@ impl Plugin for Playerplugin {
         app.register_type::<PlayerState>()
             .register_type::<Jump>()
             .register_type::<Stretching>()
+            .register_type::<Player>()
             .add_systems(Startup, spawn_player.after(load_assets))
             .add_systems(Update, movement_controls);
     }
 }
 
-#[derive(Component)]
-pub struct Player;
+#[derive(Component, Reflect, Default)]
+#[reflect(Component)]
+pub struct Player {
+    speed: f32,
+}
 
 #[derive(Component, Debug, Default, Reflect)]
 #[reflect(Component)]
@@ -71,7 +74,9 @@ impl Stretching {
 // Systems -- Startup
 fn spawn_player(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((
-        Player,
+        Player {
+            speed: PLAYER_SPEED,
+        },
         Name::new("Player"),
         MovingSpriteBundle {
             sprite_bundle: SpriteBundle {
@@ -102,29 +107,27 @@ fn spawn_player(mut commands: Commands, asset_server: Res<AssetServer>) {
 
 // System -- Update
 fn movement_controls(
-    mut query: Query<
-        (
-            &mut MovingObject,
-            &mut PlayerState,
-            &mut Sprite,
-            &mut AABB,
-            &mut Stretching,
-            &mut Jump,
-        ),
-        With<Player>,
-    >,
+    mut query: Query<(
+        &mut MovingObject,
+        &mut PlayerState,
+        &mut Sprite,
+        &mut AABB,
+        &mut Stretching,
+        &Jump,
+        &Player,
+    )>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     mut boid_params: ResMut<BoidParameters>,
 ) {
-    let (mut moving_object, mut player_state, mut sprite, mut aabb, mut stretching, mut jump) =
+    let (mut moving_object, mut player_state, mut sprite, mut aabb, mut stretching, jump, player) =
         query.single_mut();
 
     match player_state.as_mut() {
         PlayerState::Standing | PlayerState::Walking => {
             // left
             move_horizontal(
-                1.0,
+                player.speed,
                 &keyboard_input,
                 &mut player_state,
                 &mut sprite,
@@ -140,7 +143,7 @@ fn movement_controls(
         }
         PlayerState::Jumping => {
             move_horizontal(
-                0.7,
+                player.speed * 0.7,
                 &keyboard_input,
                 &mut player_state,
                 &mut sprite,
@@ -203,7 +206,7 @@ fn movement_controls(
 }
 
 fn move_horizontal(
-    maneuverability: f32,
+    movement_speed: f32,
     keyboard_input: &Res<ButtonInput<KeyCode>>,
     player_state: &mut PlayerState,
     sprite: &mut Sprite,
@@ -225,7 +228,7 @@ fn move_horizontal(
         if moving_object.state.left {
             moving_object.velocity.value.x = 0.0;
         } else {
-            moving_object.velocity.value.x = -PLAYER_SPEED * maneuverability;
+            moving_object.velocity.value.x = -movement_speed;
             sprite.flip_x = true;
         }
         // right
@@ -236,7 +239,7 @@ fn move_horizontal(
         if moving_object.state.right {
             moving_object.velocity.value.x = 0.0;
         } else {
-            moving_object.velocity.value.x = PLAYER_SPEED * maneuverability;
+            moving_object.velocity.value.x = movement_speed;
             sprite.flip_x = false;
         }
     }

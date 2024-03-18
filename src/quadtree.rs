@@ -101,7 +101,6 @@ impl Quadtree {
 
         for quadrant in quadrants {
             if let Some(quadrant_ref) = quadrant.as_mut() {
-                let quadrant_center = quadrant_ref.center;
                 inserted |= quadrant_ref.insert(entity, aabb.clone(), position);
             }
         }
@@ -130,11 +129,11 @@ impl Quadtree {
     }
 }
 
-pub fn build_quadtree<'a, T>(items: T, map_aabb: &MapAabb) -> Quadtree
+pub fn build_quadtree<'a, T>(items: T, aabb: &AABB, capacity: usize) -> Quadtree
 where
     T: IntoIterator<Item = (Option<&'a AABB>, &'a MovingObject, Entity)>,
 {
-    let mut quadtree = Quadtree::new(map_aabb.size.clone(), Vec2::ZERO, 2);
+    let mut quadtree = Quadtree::new(aabb.clone(), Vec2::ZERO, capacity);
     items.into_iter().for_each(|item| {
         quadtree.insert(item.2, item.0.cloned(), item.1.position);
     });

@@ -166,7 +166,7 @@ pub fn collisions(mut query: Query<(&AABB, &mut MovingObject, Entity)>, map_aabb
         .collect();
 
     // create quadtree
-    let quadtree = build_quadtree(option_query, &map_aabb);
+    let quadtree = build_quadtree(option_query, &map_aabb.size, 2);
 
     // create vec with all collisions to check
     let mut checks = Vec::new();
