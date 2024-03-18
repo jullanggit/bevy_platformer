@@ -4,9 +4,9 @@ use rand::{random, thread_rng, Rng};
 use crate::{
     asset_loader::SpritesLoadingStates,
     map::{setup_map, MapAabb},
-    physics::{MovingObject, MovingSpriteBundle, Position, Velocity, AABB},
+    physics::{penetration_depth, MovingObject, MovingSpriteBundle, Position, Velocity, AABB},
     player::Player,
-    quadtree::build_point_quadtree,
+    quadtree::build_quadtree,
 };
 
 pub struct BoidPlugin;
@@ -42,34 +42,37 @@ pub struct BoidParameters {
     pub disperse: bool,
     disperse_factor: f32,
 
-    pub avoid_player: bool,
-    avoid_player_factor: f32,
-    avoid_player_distance: f32,
+    avoid_obstacles_factor: f32,
+    avoid_obstacles_offset: f32,
 
     edge_avoidance_distance: f32,
     edge_avoidance_strength: f32,
 }
 
 fn move_boids(
-    mut query: Query<(&mut MovingObject, Entity), (With<Boid>, Without<Player>)>,
+    mut query: Query<(Option<&AABB>, &mut MovingObject, Entity)>,
     map_aabb: Res<MapAabb>,
     boid_params: Res<BoidParameters>,
     window: Query<&Window, With<PrimaryWindow>>,
-    player_moving_object: Query<&MovingObject, With<Player>>,
 ) {
     // new
-    let quadtree = build_point_quadtree(&query, &map_aabb);
+    let quadtree = build_quadtree(&query, &map_aabb);
 
     let mut boids = Vec::new();
 
-    // collect all boids and the boids in their view range
-    for (moving_object, entity) in &query {
+    // collect all boids and the stuff in their view range
+    for (aabb, moving_object, entity) in &query {
+        // Filter out non-boids
+        if aabb.is_some() {
+            continue;
+        }
+
         let position = moving_object.position;
 
-        let mut other_boids = Vec::new();
-        quadtree.query(&boid_params.view_distance_aabb, position, &mut other_boids);
+        let mut other_stuff = Vec::new();
+        quadtree.query(&boid_params.view_distance_aabb, position, &mut other_stuff);
 
-        boids.push((entity, other_boids));
+        boids.push((entity, other_stuff));
     }
 
     let mut rng = thread_rng();
@@ -87,20 +90,46 @@ fn move_boids(
                 if a_entity == *b_entity {
                     return (pos_acc, vel_acc, amount_acc);
                 }
+
                 // get components of both entities
-                let [(a_moving_object, _), (b_moving_object, _)] =
+                let [(_, a_moving_object, _), (b_aabb, b_moving_object, _)] =
                     query.get_many([a_entity, *b_entity]).unwrap();
+
                 // define values for easier access
                 let a_position = a_moving_object.position.value;
                 let b_position = b_moving_object.position.value;
                 let b_velocity = b_moving_object.velocity.value;
 
-                // steer away from other boids
-                let distance = a_position.distance(b_position);
-                // if distance between boids is less than the threshold, steer away
-                if distance > 0.0 {
-                    let avoid_strength = boid_params.avoid_factor / distance; // Using square of the distance to calculate strength
-                    final_velocity += (a_position - b_position).normalize() * avoid_strength;
+                match b_aabb {
+                    None => {
+                        // steer away from other boids
+                        let distance = a_position.distance(b_position);
+                        // if distance between boids is less than the threshold, steer away
+                        if distance > 0.0 {
+                            let avoid_strength = boid_params.avoid_factor / distance; // Using square of the distance to calculate strength
+                            final_velocity +=
+                                (a_position - b_position).normalize() * avoid_strength;
+                        }
+                    }
+                    Some(b_aabb) => {
+                        let modified_view_distance_vec2 = boid_params.view_distance_aabb.halfsize
+                            + boid_params.avoid_obstacles_offset;
+                        if let Some(penetration_depth) = penetration_depth(
+                            &AABB::new(modified_view_distance_vec2),
+                            a_moving_object.position,
+                            b_aabb,
+                            b_moving_object.position,
+                        ) {
+                            let distance = (boid_params.view_distance_aabb.halfsize
+                                - penetration_depth)
+                                .length();
+
+                            let avoid_strength = boid_params.avoid_obstacles_factor / distance;
+
+                            final_velocity +=
+                                (a_position - b_position).normalize() * avoid_strength;
+                        }
+                    }
                 }
 
                 // add to the accumulator
@@ -108,7 +137,7 @@ fn move_boids(
             },
         );
         // Get components of a_entity again, might be able to optimize
-        let (mut a_moving_object, _) = query.get_mut(a_entity).unwrap();
+        let (a_aabb, mut a_moving_object, _) = query.get_mut(a_entity).unwrap();
         let a_position = a_moving_object.position.value;
         let a_velocity = a_moving_object.velocity.value;
 
@@ -125,17 +154,6 @@ fn move_boids(
             final_velocity.y += boid_params.edge_avoidance_strength
         } else if a_position.y > window_halfsize.y - boid_params.edge_avoidance_distance {
             final_velocity.y -= boid_params.edge_avoidance_strength
-        }
-
-        // Avoid player
-        if boid_params.avoid_player {
-            let player_position = player_moving_object.single().position.value;
-            let distance = a_position.distance(player_position);
-
-            if distance < boid_params.avoid_player_distance && distance > 0.0 {
-                let avoid_strength = boid_params.avoid_player_factor / distance; // Using square of the distance to calculate strength
-                final_velocity += (a_position - player_position).normalize() * avoid_strength;
-            }
         }
 
         // steer towards percieved center
@@ -199,9 +217,8 @@ fn spawn_boids(mut commands: Commands, map_aabb: Res<MapAabb>) {
         disperse: false,
         disperse_factor: 20.0,
 
-        avoid_player: false,
-        avoid_player_factor: 2000.0,
-        avoid_player_distance: 32.0,
+        avoid_obstacles_factor: 200.0,
+        avoid_obstacles_offset: 10.0,
 
         edge_avoidance_distance: 10.0,
         edge_avoidance_strength: 10.0,

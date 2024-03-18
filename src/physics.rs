@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::{map::MapAabb, quadtree::build_aabb_quadtree};
+use crate::{map::MapAabb, quadtree::build_quadtree};
 
 pub struct PhysicsPlugin;
 impl Plugin for PhysicsPlugin {
@@ -36,6 +36,12 @@ impl Velocity {
 pub struct Position {
     pub value: Vec2,
 }
+impl AsRef<Vec2> for Position {
+    fn as_ref(&self) -> &Vec2 {
+        &self.value
+    }
+}
+
 impl Position {
     pub const fn new(value: Vec2) -> Self {
         Self { value }
@@ -153,8 +159,14 @@ fn stop_movement(mut query: Query<&mut MovingObject>) {
 }
 
 pub fn collisions(mut query: Query<(&AABB, &mut MovingObject, Entity)>, map_aabb: Res<MapAabb>) {
+    // convert to Option<AABB>
+    let option_query: Vec<_> = query
+        .iter()
+        .map(|(aabb, moving_object, entity)| (Some(aabb), moving_object, entity))
+        .collect();
+
     // create quadtree
-    let quadtree = build_aabb_quadtree(&query, &map_aabb);
+    let quadtree = build_quadtree(option_query, &map_aabb);
 
     // create vec with all collisions to check
     let mut checks = Vec::new();
@@ -258,22 +270,25 @@ fn apply_gravity(mut query: Query<(&mut MovingObject, &Gravity)>) {
     }
 }
 
-fn penetration_depth(
+pub fn penetration_depth(
     a_aabb: &AABB,
     a_pos: Position,
     b_aabb: &AABB,
     b_pos: Position,
 ) -> Option<Vec2> {
     if collides(a_aabb, a_pos, b_aabb, b_pos) {
-        let x = if a_pos.value.x > b_pos.value.x {
-            (b_pos.value.x + b_aabb.halfsize.x) - (a_pos.value.x - a_aabb.halfsize.x)
+        let a_pos = a_pos.value;
+        let b_pos = b_pos.value;
+
+        let x = if a_pos.x > b_pos.x {
+            (b_pos.x + b_aabb.halfsize.x) - (a_pos.x - a_aabb.halfsize.x)
         } else {
-            (b_pos.value.x - b_aabb.halfsize.x) - (a_pos.value.x + a_aabb.halfsize.x)
+            (b_pos.x - b_aabb.halfsize.x) - (a_pos.x + a_aabb.halfsize.x)
         };
-        let y = if a_pos.value.y > b_pos.value.y {
-            (b_pos.value.y + b_aabb.halfsize.y) - (a_pos.value.y - a_aabb.halfsize.y)
+        let y = if a_pos.y > b_pos.y {
+            (b_pos.y + b_aabb.halfsize.y) - (a_pos.y - a_aabb.halfsize.y)
         } else {
-            (b_pos.value.y - b_aabb.halfsize.y) - (a_pos.value.y + a_aabb.halfsize.y)
+            (b_pos.y - b_aabb.halfsize.y) - (a_pos.y + a_aabb.halfsize.y)
         };
 
         return Some(Vec2::new(x, y));

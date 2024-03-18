@@ -5,7 +5,7 @@ use crate::physics::{Gravity, MovingObject, MovingSpriteBundle, AABB, GRAVITY_CO
 use bevy::prelude::*;
 
 const PLAYER_SPEED: f32 = 200.0;
-pub const PLAYER_JUMP_FORCE: f32 = 400.0;
+pub const PLAYER_JUMP_FORCE: f32 = 600.0;
 const JUMP_TIME: u8 = 15;
 const PLAYER_TERMINAL_VELOCITY: f32 = 1000.0;
 
@@ -148,7 +148,16 @@ fn movement_controls(
                 true,
             );
 
-            if keyboard_input.just_released(KeyCode::Space) && moving_object.velocity.value.y > 0.0
+            // if jump key is pressed
+            if keyboard_input.pressed(KeyCode::Space) {
+                if moving_object.old_state.ground
+                    && moving_object.velocity.value.y > -1.0
+                    && moving_object.velocity.value.y < 1.0
+                {
+                    moving_object.velocity.value.y += jump.force;
+                }
+            } else if keyboard_input.just_released(KeyCode::Space)
+                && moving_object.velocity.value.y > 0.0
             {
                 moving_object.velocity.value.y = 0.0;
             }
@@ -190,11 +199,6 @@ fn movement_controls(
     // Boids dispersion
     if keyboard_input.just_pressed(KeyCode::KeyB) {
         boid_params.disperse = !boid_params.disperse;
-    }
-
-    // boids avoid player
-    if keyboard_input.just_pressed(KeyCode::KeyP) {
-        boid_params.avoid_player = !boid_params.avoid_player;
     }
 }
 
