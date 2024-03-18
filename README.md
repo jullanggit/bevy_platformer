@@ -3,4 +3,4 @@ This game can be played in the browser at https://jullang.itch.io/bevy-platforme
 
 # Controlls
 p = toggle boids dodging player,
-b = toggle disperse boids
+b = toggle disperse boids,

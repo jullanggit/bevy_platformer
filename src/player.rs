@@ -5,7 +5,7 @@ use crate::physics::{Gravity, MovingObject, MovingSpriteBundle, AABB, GRAVITY_CO
 use bevy::prelude::*;
 
 const PLAYER_SPEED: f32 = 200.0;
-pub const PLAYER_JUMP_FORCE: f32 = 40.0;
+pub const PLAYER_JUMP_FORCE: f32 = 400.0;
 const JUMP_TIME: u8 = 15;
 const PLAYER_TERMINAL_VELOCITY: f32 = 1000.0;
 
@@ -28,7 +28,6 @@ pub struct Player;
 enum PlayerState {
     Standing,
     Walking,
-    LoadingJump(Jump),
     #[default]
     Jumping,
 }
@@ -36,15 +35,11 @@ enum PlayerState {
 #[derive(Component, Clone, Debug, Default, Reflect)]
 #[reflect(Component)]
 pub struct Jump {
-    pub jump_state: Option<u8>,
-    jump_force: f32,
+    force: f32,
 }
 impl Jump {
-    const fn new(jump_state: Option<u8>, jump_force: f32) -> Self {
-        Self {
-            jump_state,
-            jump_force,
-        }
+    const fn new(force: f32) -> Self {
+        Self { force }
     }
 }
 
@@ -101,6 +96,7 @@ fn spawn_player(mut commands: Commands, asset_server: Res<AssetServer>) {
         }),
         PlayerState::Standing,
         Stretching::new(100.0, (TILE_SIZE / 2.0) * (TILE_SIZE / 2.0), 10.0, false),
+        Jump::new(PLAYER_JUMP_FORCE),
     ));
 }
 
@@ -113,6 +109,7 @@ fn movement_controls(
             &mut Sprite,
             &mut AABB,
             &mut Stretching,
+            &mut Jump,
         ),
         With<Player>,
     >,
@@ -120,7 +117,7 @@ fn movement_controls(
     time: Res<Time>,
     mut boid_params: ResMut<BoidParameters>,
 ) {
-    let (mut moving_object, mut player_state, mut sprite, mut aabb, mut stretching) =
+    let (mut moving_object, mut player_state, mut sprite, mut aabb, mut stretching, mut jump) =
         query.single_mut();
 
     match player_state.as_mut() {
@@ -136,48 +133,26 @@ fn movement_controls(
             );
 
             // if jump key is pressed
-            if keyboard_input.pressed(KeyCode::KeyS) {
-                initiate_jump(&mut player_state);
+            if keyboard_input.pressed(KeyCode::Space) {
+                moving_object.velocity.value.y += jump.force;
+                *player_state = PlayerState::Jumping;
             }
         }
-        // PlayerState::Walking => {
-        // move_horizontal(
-        // 1.0,
-        // &keyboard_input,
-        // &mut player_state,
-        // &mut sprite,
-        // &mut velocity,
-        // &mut moving_object_state,
-        // );
-        //
-        // if keyboard_input.pressed(KeyCode::S) {
-        // initiate_jump(&mut player_state);
-        // }
-        // }
-        PlayerState::LoadingJump(_jump) => {
+        PlayerState::Jumping => {
             move_horizontal(
-                0.5,
+                0.7,
                 &keyboard_input,
                 &mut player_state,
                 &mut sprite,
                 &mut moving_object,
-                false,
+                true,
             );
 
-            if keyboard_input.pressed(KeyCode::KeyS) {
-                load_jump(&mut player_state);
-            } else {
-                execute_jump(&mut moving_object, &mut player_state);
+            if keyboard_input.just_released(KeyCode::Space) && moving_object.velocity.value.y > 0.0
+            {
+                moving_object.velocity.value.y = 0.0;
             }
         }
-        PlayerState::Jumping => move_horizontal(
-            0.7,
-            &keyboard_input,
-            &mut player_state,
-            &mut sprite,
-            &mut moving_object,
-            true,
-        ),
     }
 
     // Changing hitbox
@@ -221,35 +196,6 @@ fn movement_controls(
     if keyboard_input.just_pressed(KeyCode::KeyP) {
         boid_params.avoid_player = !boid_params.avoid_player;
     }
-}
-
-fn initiate_jump(player_state: &mut PlayerState) {
-    *player_state = PlayerState::LoadingJump(Jump::new(Some(1), PLAYER_JUMP_FORCE));
-}
-
-fn load_jump(player_state: &mut PlayerState) {
-    // loading jump
-    if let PlayerState::LoadingJump(jump) = player_state {
-        if let Some(load_time) = jump.jump_state.as_mut() {
-            if *load_time < JUMP_TIME {
-                // faster buildup at the start
-                if *load_time == 1 {
-                    *load_time += 1;
-                }
-                *load_time += 1;
-            }
-        }
-    }
-}
-
-fn execute_jump(moving_object: &mut MovingObject, player_state: &mut PlayerState) {
-    if let PlayerState::LoadingJump(jump) = player_state {
-        if let Some(load_time) = jump.jump_state {
-            moving_object.velocity.value.y = PLAYER_JUMP_FORCE * load_time as f32;
-        }
-    }
-    *player_state = PlayerState::Jumping;
-    moving_object.state.ground = false;
 }
 
 fn move_horizontal(
