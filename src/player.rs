@@ -154,8 +154,8 @@ fn movement_controls(
             // if jump key is pressed
             if keyboard_input.pressed(KeyCode::Space) {
                 if moving_object.old_state.ground
-                    && moving_object.velocity.value.y > -1.0
-                    && moving_object.velocity.value.y < 1.0
+                    && moving_object.velocity.value.y > -5.0
+                    && moving_object.velocity.value.y < 5.0
                 {
                     moving_object.velocity.value.y += jump.force;
                 }

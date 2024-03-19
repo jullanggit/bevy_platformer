@@ -114,6 +114,8 @@ fn move_boids(
 
     let mut rng = thread_rng();
 
+    let mut to_teleport = Vec::new();
+
     // iterate over all boids and the boids in their view range
     for (a_entity, others) in boids {
         let mut final_velocity = Vec2::ZERO;
@@ -129,8 +131,14 @@ fn move_boids(
                 }
 
                 // get components of both entities
-                let [(_, mut a_moving_object, _), (b_aabb, b_moving_object, _)] =
+                let [(_, mut a_moving_object, _), (b_aabb, mut b_moving_object, _)] =
                     query.get_many_mut([a_entity, *b_entity]).unwrap();
+
+                // If b_entity should be teleportet, and the current boid already has some boids
+                // arond it
+                if to_teleport.contains(b_entity) && amount_acc >= 7.0 {
+                    b_moving_object.position.value = a_moving_object.position.value;
+                }
 
                 // define values for easier access
                 let a_position = a_moving_object.position.value;
@@ -190,6 +198,11 @@ fn move_boids(
                 (pos_acc + b_position, vel_acc + b_velocity, amount_acc + 1.0)
             },
         );
+        // If there arent any boids around the current boid
+        if boids_amount < 3.0 {
+            to_teleport.push(a_entity)
+        }
+
         // Get components of a_entity again, might be able to optimize
         let (_, mut a_moving_object, _) = query.get_mut(a_entity).unwrap();
         let a_position = a_moving_object.position.value;
@@ -249,7 +262,7 @@ fn move_boids(
 fn spawn_boids(mut commands: Commands, map_aabb: Res<MapAabb>) {
     let mut rng = thread_rng();
 
-    for _ in 0..3000 {
+    for _ in 0..1000 {
         commands.spawn((
             Name::new("Boid"),
             MovingObject {
