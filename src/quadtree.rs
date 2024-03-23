@@ -1,7 +1,4 @@
-use crate::{
-    map::MapAabb,
-    physics::{collides, intersects, MovingObject, Position, AABB},
-};
+use crate::physics::{collides, intersects, MovingObject, Position, AABB};
 use bevy::prelude::*;
 
 #[derive(Debug)]
@@ -71,7 +68,7 @@ impl Quadtree {
         match aabb {
             Some(ref aabb) => {
                 // Check if the aabb intersects the nodes boundary
-                if !collides(&self.boundary, self.center, &aabb, position) {
+                if !collides(&self.boundary, self.center, aabb, position) {
                     return false;
                 }
             }
@@ -129,12 +126,13 @@ impl Quadtree {
     }
 }
 
-pub fn build_quadtree<'a, T>(items: T, aabb: &AABB, capacity: usize) -> Quadtree
+pub fn build_quadtree<'a, T, I, F>(items: I, aabb: &AABB, capacity: usize, transform: F) -> Quadtree
 where
-    T: IntoIterator<Item = (Option<&'a AABB>, &'a MovingObject, Entity)>,
+    I: IntoIterator<Item = T>,
+    F: Fn(T) -> (Option<&'a AABB>, &'a MovingObject, Entity),
 {
     let mut quadtree = Quadtree::new(aabb.clone(), Vec2::ZERO, capacity);
-    items.into_iter().for_each(|item| {
+    items.into_iter().map(transform).for_each(|item| {
         quadtree.insert(item.2, item.0.cloned(), item.1.position);
     });
     quadtree

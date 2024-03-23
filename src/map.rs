@@ -24,6 +24,12 @@ impl Default for MapAabb {
     }
 }
 
+#[derive(Component, Debug, Clone)]
+pub enum TileType {
+    tile,
+    Target,
+}
+
 pub const TILE_SIZE: f32 = 64.0;
 
 pub fn setup_map(mut commands: Commands, sprites: Res<Sprites>, images: Res<Assets<Image>>) {
@@ -35,7 +41,7 @@ pub fn setup_map(mut commands: Commands, sprites: Res<Sprites>, images: Res<Asse
         size: AABB::new(size.as_vec2() * TILE_SIZE / 2.0),
     });
 
-    let mut blocks: Vec<(UVec2, UVec2)> = Vec::new();
+    let mut tiles: Vec<(UVec2, UVec2, TileType)> = Vec::new();
     // iterating over every pixel
     for y in 0..size.x {
         for x in 0..size.y {
@@ -45,45 +51,49 @@ pub fn setup_map(mut commands: Commands, sprites: Res<Sprites>, images: Res<Asse
             match rgba {
                 [255, 255, 255, 255] => {
                     let mut added = false;
-                    for block in &mut blocks {
+                    for tile in &mut tiles {
                         // Vertical:
-                        // if the new block is in the same horizontal line and one below an existing block,
-                        // add it to the existing block
-                        if block.0.x == x && block.1.x == x && y == block.1.y + 1 {
-                            block.1.y += 1;
+                        // if the new tile is in the same horizontal line and one below an existing tile,
+                        // add it to the existing tile
+                        if tile.0.x == x && tile.1.x == x && y == tile.1.y + 1 {
+                            tile.1.y += 1;
 
                             added = true;
                             break;
                         }
                         // Horizontal:
-                        // if the new block is in the same vertical line and one to the right of an existing block,
-                        // add it to the existing block
-                        if block.0.y == y && block.1.y == y && x == block.1.x + 1 {
-                            block.1.x += 1;
+                        // if the new tile is in the same vertical line and one to the right of an existing tile,
+                        // add it to the existing tile
+                        if tile.0.y == y && tile.1.y == y && x == tile.1.x + 1 {
+                            tile.1.x += 1;
 
                             added = true;
                             break;
                         }
                     }
-                    // if the new block wasnt added to any existing ones, add it to the vec
+                    // if the new tile wasnt added to any existing ones, add it to the vec
                     if !added {
-                        blocks.push((UVec2::new(x, y), UVec2::new(x, y)));
+                        tiles.push((UVec2::new(x, y), UVec2::new(x, y), TileType::tile));
                     }
                 }
-                _ => {}
+                [0, 255, 0, 255] => {
+                    tiles.push((UVec2::new(x, y), UVec2::new(x, y)), TileType::Target)
+                }
+                other => {
+                    dbg!(other)
+                }
             }
         }
     }
 
-    for block in blocks {
-        let dimensions = Vec2::new(
-            (block.1.x - block.0.x) as f32,
-            (block.1.y - block.0.y) as f32,
-        );
+    for tile in tiles {
+        let dimensions = Vec2::new((tile.1.x - tile.0.x) as f32, (tile.1.y - tile.0.y) as f32);
+
+        let tile_type = tile.2;
 
         let mut halfsize = dimensions / 2.0;
 
-        let original_position = block.0.as_vec2() + halfsize;
+        let original_position = tile.0.as_vec2() + halfsize;
 
         // convert to bevy coordinates
         let mut position = Vec2::new(
@@ -96,7 +106,7 @@ pub fn setup_map(mut commands: Commands, sprites: Res<Sprites>, images: Res<Asse
         position *= TILE_SIZE;
 
         commands.spawn((
-            Name::new("Block"),
+            Name::new(format!("{tile_type}")),
             MovingSpriteSheetBundle {
                 spritesheet_bundle: SpriteSheetBundle {
                     atlas: TextureAtlas {
@@ -117,6 +127,7 @@ pub fn setup_map(mut commands: Commands, sprites: Res<Sprites>, images: Res<Asse
                 },
                 ..default()
             },
+            tile_type,
         ));
     }
 }

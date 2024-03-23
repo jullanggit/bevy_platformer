@@ -72,10 +72,15 @@ impl AABB {
 #[reflect(Component)]
 pub struct Gravity {
     pub force: f32,
+    pub terminal_velocity: f32,
 }
+
 impl Gravity {
-    pub const fn new(force: f32) -> Self {
-        Self { force }
+    pub const fn new(force: f32, terminal_velocity: f32) -> Self {
+        Self {
+            force,
+            terminal_velocity,
+        }
     }
 }
 
@@ -159,14 +164,13 @@ fn stop_movement(mut query: Query<&mut MovingObject>) {
 }
 
 pub fn collisions(mut query: Query<(&AABB, &mut MovingObject, Entity)>, map_aabb: Res<MapAabb>) {
-    // convert to Option<AABB>
-    let option_query: Vec<_> = query
-        .iter()
-        .map(|(aabb, moving_object, entity)| (Some(aabb), moving_object, entity))
-        .collect();
-
     // create quadtree
-    let quadtree = build_quadtree(option_query, &map_aabb.size, 2);
+    let quadtree = build_quadtree(
+        &query,
+        &map_aabb.size,
+        2,
+        |(aabb, moving_object, entity)| (Some(aabb), moving_object, entity),
+    );
 
     // create vec with all collisions to check
     let mut checks = Vec::new();
@@ -264,6 +268,10 @@ fn apply_gravity(mut query: Query<(&mut MovingObject, &Gravity)>) {
     for (mut moving_object, gravity) in &mut query {
         if moving_object.state.ground {
             moving_object.velocity.value.y = 0.0;
+        } else if moving_object.velocity.value.y > gravity.terminal_velocity {
+            moving_object.velocity.value.y = gravity.terminal_velocity;
+        } else if moving_object.velocity.value.y < -gravity.terminal_velocity {
+            moving_object.velocity.value.y = -gravity.terminal_velocity;
         } else {
             moving_object.velocity.value.y -= gravity.force;
         }

@@ -87,7 +87,7 @@ fn spawn_player(mut commands: Commands, asset_server: Res<AssetServer>) {
                 },
                 ..default()
             },
-            gravity: Gravity::new(GRAVITY_CONSTANT),
+            gravity: Gravity::new(GRAVITY_CONSTANT, PLAYER_TERMINAL_VELOCITY),
             aabb: AABB::new(Vec2::new(TILE_SIZE / 2.0, TILE_SIZE / 2.0)),
             moving_object: MovingObject {
                 mass: 1.0,

@@ -5,6 +5,7 @@ use crate::{
     asset_loader::SpritesLoadingStates,
     map::{setup_map, MapAabb},
     physics::{MovingObject, Position, Velocity, AABB},
+    player::Player,
     quadtree::build_quadtree,
 };
 
@@ -48,6 +49,8 @@ pub struct BoidParameters {
     edge_avoidance_strength: f32,
 
     quadtree_capacity: usize,
+
+    player_push_factor: f32,
 }
 impl Default for BoidParameters {
     fn default() -> Self {
@@ -74,12 +77,14 @@ impl Default for BoidParameters {
             edge_avoidance_strength: 10.0,
 
             quadtree_capacity: 2,
+
+            player_push_factor: 0.1,
         }
     }
 }
 
 fn move_boids(
-    mut query: Query<(Option<&AABB>, &mut MovingObject, Entity)>,
+    mut query: Query<(Option<&AABB>, &mut MovingObject, Entity, Option<&Player>)>,
     map_aabb: Res<MapAabb>,
     boid_params: Res<BoidParameters>,
     window: Query<&Window, With<PrimaryWindow>>,
@@ -93,12 +98,13 @@ fn move_boids(
         &query,
         &AABB::new(window_halfsize),
         boid_params.quadtree_capacity,
+        |(aabb, moving_object, entity, _)| (aabb, moving_object, entity),
     );
 
     let mut boids = Vec::new();
 
     // collect all boids and the stuff in their view range
-    for (aabb, moving_object, entity) in &query {
+    for (aabb, moving_object, entity, _) in &query {
         // Filter out non-boids
         if aabb.is_some() {
             continue;
@@ -131,7 +137,7 @@ fn move_boids(
                 }
 
                 // get components of both entities
-                let [(_, mut a_moving_object, _), (b_aabb, mut b_moving_object, _)] =
+                let [(_, mut a_moving_object, _, _), (b_aabb, mut b_moving_object, _, player)] =
                     query.get_many_mut([a_entity, *b_entity]).unwrap();
 
                 // If b_entity should be teleportet, and the current boid already has some boids
@@ -168,28 +174,25 @@ fn move_boids(
                         if distance_to_closest_point > 0.0 {
                             let avoid_strength =
                                 boid_params.avoid_obstacles_factor / distance_to_closest_point;
-                            final_velocity +=
+                            let avoid_vec =
                                 (a_position - closest_point).normalize() * avoid_strength;
-                        // If the boid is inside the aabb
+                            final_velocity += avoid_vec;
+                        // If the boid is inside the aabb, and has a large enoug velocity, push it
+                        // backwards
+                        } else if a_velocity.length() > 5.0 {
+                            a_moving_object.position.value -= a_velocity * time.delta_seconds();
                         } else {
-                            if a_velocity.length() > 5.0 {
-                                a_moving_object.position.value -= a_velocity * time.delta_seconds();
-                            } else {
-                                // Teleport the boid to a random location
-                                a_moving_object.position.value = Vec2::new(
-                                    rng.gen_range(
-                                        -map_aabb.size.halfsize.x..map_aabb.size.halfsize.x,
-                                    ),
-                                    rng.gen_range(
-                                        -map_aabb.size.halfsize.y..map_aabb.size.halfsize.y,
-                                    ) / 2.0,
-                                );
-                                // Set random velocity
-                                a_moving_object.velocity.value.x =
-                                    (rng.gen::<f32>() - 0.5) * 2.0 * boid_params.max_velocity;
-                                a_moving_object.velocity.value.y =
-                                    (rng.gen::<f32>() - 0.5) * 2.0 * boid_params.max_velocity;
-                            }
+                            // Teleport the boid to a random location
+                            a_moving_object.position.value = Vec2::new(
+                                rng.gen_range(-map_aabb.size.halfsize.x..map_aabb.size.halfsize.x),
+                                rng.gen_range(-map_aabb.size.halfsize.y..map_aabb.size.halfsize.y)
+                                    / 2.0,
+                            );
+                            // Set random velocity
+                            a_moving_object.velocity.value.x =
+                                (rng.gen::<f32>() - 0.5) * 2.0 * boid_params.max_velocity;
+                            a_moving_object.velocity.value.y =
+                                (rng.gen::<f32>() - 0.5) * 2.0 * boid_params.max_velocity;
                         }
                     }
                 }
@@ -200,11 +203,11 @@ fn move_boids(
         );
         // If there arent any boids around the current boid
         if boids_amount < 3.0 {
-            to_teleport.push(a_entity)
+            to_teleport.push(a_entity);
         }
 
         // Get components of a_entity again, might be able to optimize
-        let (_, mut a_moving_object, _) = query.get_mut(a_entity).unwrap();
+        let (_, mut a_moving_object, _, _) = query.get_mut(a_entity).unwrap();
         let a_position = a_moving_object.position.value;
         let a_velocity = a_moving_object.velocity.value;
 
