@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::{
     asset_loader::{Sprites, SpritesLoadingStates},
     physics::{MovingObject, MovingSpriteSheetBundle, Position, AABB},
@@ -8,6 +10,7 @@ pub struct MapPlugin;
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MapAabb>()
+            .register_type::<TileType>()
             .add_systems(OnEnter(SpritesLoadingStates::Finished), setup_map);
     }
 }
@@ -24,13 +27,24 @@ impl Default for MapAabb {
     }
 }
 
-#[derive(Component, Debug, Clone)]
+#[derive(Component, Debug, Clone, Reflect)]
+#[reflect(Component)]
 pub enum TileType {
-    tile,
-    Target,
+    Tile,
+    Target(f32),
+}
+impl Display for TileType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let text = match self {
+            Self::Tile => "Tile",
+            Self::Target(_) => "Target",
+        };
+        write!(f, "{text}")
+    }
 }
 
 pub const TILE_SIZE: f32 = 64.0;
+pub const TARGET_HP: f32 = 100.0;
 
 pub fn setup_map(mut commands: Commands, sprites: Res<Sprites>, images: Res<Assets<Image>>) {
     // loading image and getting image size
@@ -73,14 +87,18 @@ pub fn setup_map(mut commands: Commands, sprites: Res<Sprites>, images: Res<Asse
                     }
                     // if the new tile wasnt added to any existing ones, add it to the vec
                     if !added {
-                        tiles.push((UVec2::new(x, y), UVec2::new(x, y), TileType::tile));
+                        tiles.push((UVec2::new(x, y), UVec2::new(x, y), TileType::Tile));
                     }
                 }
                 [0, 255, 0, 255] => {
-                    tiles.push((UVec2::new(x, y), UVec2::new(x, y)), TileType::Target)
+                    tiles.push((
+                        UVec2::new(x, y),
+                        UVec2::new(x, y),
+                        TileType::Target(TARGET_HP),
+                    ));
                 }
                 other => {
-                    dbg!(other)
+                    dbg!(other);
                 }
             }
         }

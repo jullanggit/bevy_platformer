@@ -3,7 +3,7 @@ use rand::{thread_rng, Rng};
 
 use crate::{
     asset_loader::SpritesLoadingStates,
-    map::{setup_map, MapAabb},
+    map::{setup_map, MapAabb, TileType},
     physics::{MovingObject, Position, Velocity, AABB},
     player::Player,
     quadtree::build_quadtree,
@@ -22,8 +22,10 @@ impl Plugin for BoidPlugin {
     }
 }
 
-#[derive(Component)]
-struct Boid;
+#[derive(Component, Debug, Default, Clone)]
+struct Boid {
+    inside_target: bool,
+}
 
 #[derive(Resource, Reflect)]
 #[reflect(Resource)]
@@ -44,6 +46,9 @@ pub struct BoidParameters {
 
     avoid_obstacles_factor: f32,
     avoid_obstacles_offset: f32,
+
+    attract_target_factor: f32,
+    attract_target_offset: f32,
 
     edge_avoidance_distance: f32,
     edge_avoidance_strength: f32,
@@ -73,6 +78,9 @@ impl Default for BoidParameters {
             avoid_obstacles_factor: 200.0,
             avoid_obstacles_offset: 10.0,
 
+            attract_target_factor: 200.0,
+            attract_target_offset: 10.0,
+
             edge_avoidance_distance: 10.0,
             edge_avoidance_strength: 10.0,
 
@@ -84,7 +92,13 @@ impl Default for BoidParameters {
 }
 
 fn move_boids(
-    mut query: Query<(Option<&AABB>, &mut MovingObject, Entity, Option<&Player>)>,
+    mut query: Query<(
+        Option<&AABB>,
+        &mut MovingObject,
+        Entity,
+        Option<&Boid>,
+        Option<&mut TileType>,
+    )>,
     map_aabb: Res<MapAabb>,
     boid_params: Res<BoidParameters>,
     window: Query<&Window, With<PrimaryWindow>>,
@@ -98,13 +112,13 @@ fn move_boids(
         &query,
         &AABB::new(window_halfsize),
         boid_params.quadtree_capacity,
-        |(aabb, moving_object, entity, _)| (aabb, moving_object, entity),
+        |(aabb, moving_object, entity, _, _)| (aabb, moving_object, entity),
     );
 
     let mut boids = Vec::new();
 
     // collect all boids and the stuff in their view range
-    for (aabb, moving_object, entity, _) in &query {
+    for (aabb, moving_object, entity, _, _) in &query {
         // Filter out non-boids
         if aabb.is_some() {
             continue;
@@ -137,7 +151,7 @@ fn move_boids(
                 }
 
                 // get components of both entities
-                let [(_, mut a_moving_object, _, _), (b_aabb, mut b_moving_object, _, player)] =
+                let [(_, mut a_moving_object, _, boid, _), (b_aabb, mut b_moving_object, _, _, tile_type)] =
                     query.get_many_mut([a_entity, *b_entity]).unwrap();
 
                 // If b_entity should be teleportet, and the current boid already has some boids
@@ -152,50 +166,7 @@ fn move_boids(
                 let b_position = b_moving_object.position.value;
                 let b_velocity = b_moving_object.velocity.value;
 
-                match b_aabb {
-                    None => {
-                        // steer away from other boids
-                        let distance = a_position.distance(b_position);
-
-                        // if distance between boids is less than the threshold, steer away
-                        if distance > 0.0 {
-                            let avoid_strength = boid_params.avoid_factor / distance; // Using square of the distance to calculate strength
-                            final_velocity +=
-                                (a_position - b_position).normalize() * avoid_strength;
-                        }
-                    }
-                    Some(b_aabb) => {
-                        let closest_point = a_position
-                            .clamp(b_position - b_aabb.halfsize, b_position + b_aabb.halfsize);
-
-                        let distance_to_closest_point = a_position.distance(closest_point);
-
-                        // If the boid isnt inside the aabb
-                        if distance_to_closest_point > 0.0 {
-                            let avoid_strength =
-                                boid_params.avoid_obstacles_factor / distance_to_closest_point;
-                            let avoid_vec =
-                                (a_position - closest_point).normalize() * avoid_strength;
-                            final_velocity += avoid_vec;
-                        // If the boid is inside the aabb, and has a large enoug velocity, push it
-                        // backwards
-                        } else if a_velocity.length() > 5.0 {
-                            a_moving_object.position.value -= a_velocity * time.delta_seconds();
-                        } else {
-                            // Teleport the boid to a random location
-                            a_moving_object.position.value = Vec2::new(
-                                rng.gen_range(-map_aabb.size.halfsize.x..map_aabb.size.halfsize.x),
-                                rng.gen_range(-map_aabb.size.halfsize.y..map_aabb.size.halfsize.y)
-                                    / 2.0,
-                            );
-                            // Set random velocity
-                            a_moving_object.velocity.value.x =
-                                (rng.gen::<f32>() - 0.5) * 2.0 * boid_params.max_velocity;
-                            a_moving_object.velocity.value.y =
-                                (rng.gen::<f32>() - 0.5) * 2.0 * boid_params.max_velocity;
-                        }
-                    }
-                }
+                object_interactions(b_aabb, a_position, b_position, &boid_params, &mut final_velocity, a_velocity, a_moving_object, &time, &mut rng, &map_aabb, tile_type);
 
                 // add to the accumulator
                 (pos_acc + b_position, vel_acc + b_velocity, amount_acc + 1.0)
@@ -207,7 +178,7 @@ fn move_boids(
         }
 
         // Get components of a_entity again, might be able to optimize
-        let (_, mut a_moving_object, _, _) = query.get_mut(a_entity).unwrap();
+        let (_, mut a_moving_object, _, _, _) = query.get_mut(a_entity).unwrap();
         let a_position = a_moving_object.position.value;
         let a_velocity = a_moving_object.velocity.value;
 
@@ -262,6 +233,89 @@ fn move_boids(
     }
 }
 
+fn object_interactions(
+    b_aabb: Option<&AABB>,
+    a_position: Vec2,
+    b_position: Vec2,
+    boid_params: &Res<'_, BoidParameters>,
+    final_velocity: &mut Vec2,
+    a_velocity: Vec2,
+    mut a_moving_object: Mut<'_, MovingObject>,
+    time: &Res<'_, Time>,
+    rng: &mut rand::prelude::ThreadRng,
+    map_aabb: &Res<'_, MapAabb>,
+    tile_type: Option<Mut<'_, TileType>>,
+) {
+    match tile_type {
+        Some(tile_type) => {
+            match tile_type.into_inner() {
+                TileType::Tile => {
+                    let b_aabb = b_aabb.expect("Tile doesnt have aabb");
+                    let closest_point = a_position
+                        .clamp(b_position - b_aabb.halfsize, b_position + b_aabb.halfsize);
+
+                    let distance_to_closest_point = a_position.distance(closest_point);
+
+                    // If the boid isn't inside the block
+                    if distance_to_closest_point > 0.0 {
+                        let avoid_strength =
+                            boid_params.avoid_obstacles_factor / distance_to_closest_point;
+                        let avoid_vec = (a_position - closest_point).normalize() * avoid_strength;
+                        *final_velocity += avoid_vec;
+                    // If the boid is inside the block, and has a large enoug velocity, push it
+                    // backwards
+                    } else if a_velocity.length() > 5.0 {
+                        a_moving_object.position.value -= a_velocity * time.delta_seconds();
+                    } else {
+                        // Teleport the boid to a random location
+                        a_moving_object.position.value = Vec2::new(
+                            rng.gen_range(-map_aabb.size.halfsize.x..map_aabb.size.halfsize.x),
+                            rng.gen_range(-map_aabb.size.halfsize.y..map_aabb.size.halfsize.y)
+                                / 2.0,
+                        );
+                        // Set random velocity
+                        a_moving_object.velocity.value.x =
+                            (rng.gen::<f32>() - 0.5) * 2.0 * boid_params.max_velocity;
+                        a_moving_object.velocity.value.y =
+                            (rng.gen::<f32>() - 0.5) * 2.0 * boid_params.max_velocity;
+                    }
+                }
+                TileType::Target(mut hp) => {
+                    let b_aabb = b_aabb.expect("Tile doesnt have aabb");
+                    let closest_point = a_position
+                        .clamp(b_position - b_aabb.halfsize, b_position + b_aabb.halfsize);
+
+                    let distance_to_closest_point = a_position.distance(closest_point);
+
+                    // If the boid isn't inside the target
+                    if distance_to_closest_point > 0.0 {
+                        let attract_strength =
+                            boid_params.attract_target_factor / distance_to_closest_point;
+                        let attract_vec =
+                            (a_position - closest_point).normalize() * attract_strength;
+                        // negate the vec to make the boid go toward the target
+                        *final_velocity -= attract_vec;
+                    // If the boid is inside the target
+                    } else {
+                        hp -= 1.0;
+                    }
+                }
+            }
+        }
+        // If the object isn't a tile
+        None => {
+            // steer away from other boids
+            let distance = a_position.distance(b_position);
+
+            // if distance between boids is less than the threshold, steer away
+            if distance > 0.0 {
+                let avoid_strength = boid_params.avoid_factor / distance; // Using square of the distance to calculate strength
+                *final_velocity += (a_position - b_position).normalize() * avoid_strength;
+            }
+        }
+    }
+}
+
 fn spawn_boids(mut commands: Commands, map_aabb: Res<MapAabb>) {
     let mut rng = thread_rng();
 
@@ -286,7 +340,7 @@ fn spawn_boids(mut commands: Commands, map_aabb: Res<MapAabb>) {
                 },
                 ..default()
             },
-            Boid,
+            Boid::default(),
         ));
     }
 }
